@@ -11,8 +11,6 @@ export default function Sales() {
   const [sales, setSales] = useState([]);
 
   const inputRef = useRef(null);
-  const barcodeBuffer = useRef("");
-  const barcodeTimer = useRef(null);
 
   function loadSales() {
     api.getSales()
@@ -23,53 +21,31 @@ export default function Sales() {
   useEffect(() => {
     loadSales();
 
-    inputRef.current?.focus();
-
-    const handleKeyDown = (e) => {
-      // Ignore when typing in quantity field
-      if (
-        document.activeElement &&
-        document.activeElement.type === "number"
-      ) {
-        return;
-      }
-
-      if (e.key === "Enter") {
-        e.preventDefault();
-
-        const code = barcodeBuffer.current.trim();
-
-        if (code) {
-          setManualCode(code);
-          lookup(code);
-        }
-
-        barcodeBuffer.current = "";
-        return;
-      }
-
-      if (e.key.length === 1) {
-        barcodeBuffer.current += e.key;
-
-        clearTimeout(barcodeTimer.current);
-
-        barcodeTimer.current = setTimeout(() => {
-          barcodeBuffer.current = "";
-        }, 100);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      clearTimeout(barcodeTimer.current);
-    };
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
   }, []);
 
-  async function lookup(code) {
+  async function lookup(rawValue) {
     setError("");
     setMessage("");
+
+    let code = String(rawValue).trim();
+
+    if (!code) return;
+
+    // Handle QR codes that contain JSON
+    try {
+      const parsed = JSON.parse(code);
+
+      if (parsed.code) {
+        code = parsed.code;
+      }
+    } catch {
+      // Plain barcode
+    }
+
+    setManualCode(code);
 
     try {
       const p = await api.lookupCode(code);
@@ -84,12 +60,15 @@ export default function Sales() {
 
   function handleManualLookup(e) {
     e.preventDefault();
+    lookup(inputRef.current.value);
+  }
 
-    const code = manualCode.trim();
+  function handleScannerKeyDown(e) {
+    if (e.key !== "Enter") return;
 
-    if (!code) return;
+    e.preventDefault();
 
-    lookup(code);
+    lookup(inputRef.current.value);
   }
 
   async function handleRecordSale() {
@@ -111,8 +90,9 @@ export default function Sales() {
 
       loadSales();
 
-      barcodeBuffer.current = "";
-      inputRef.current?.focus();
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     } catch (err) {
       setError(err.message);
     }
@@ -123,21 +103,23 @@ export default function Sales() {
       <div className="page-header">
         <h1>Sales</h1>
         <p className="page-subtitle">
-          Scan a barcode with the T1902L USB scanner or enter the product code
-          manually.
+          Scan a QR code using the T1902L USB scanner or enter the product code manually.
         </p>
       </div>
 
       <div className="panel-grid">
+
         <div className="card">
           <h2 className="card-title">Scan Item</h2>
 
           <form onSubmit={handleManualLookup} className="manual-lookup">
             <input
               ref={inputRef}
-              placeholder="Scan barcode or type product code..."
+              placeholder="Ready to scan..."
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
+              onKeyDown={handleScannerKeyDown}
+              autoFocus
             />
 
             <button type="submit" className="btn btn-secondary">
@@ -147,7 +129,7 @@ export default function Sales() {
           </form>
 
           <p className="muted" style={{ marginTop: 12 }}>
-            Ready for scanning...
+            Waiting for scanner...
           </p>
         </div>
 
@@ -159,7 +141,10 @@ export default function Sales() {
 
           {product ? (
             <div className="sale-preview">
-              <div className="sale-preview-name">{product.name}</div>
+
+              <div className="sale-preview-name">
+                {product.name}
+              </div>
 
               <div className="muted">
                 Code {product.code} · {product.category}
@@ -187,7 +172,7 @@ export default function Sales() {
 
               <div className="sale-total">
                 Total: ₱
-                {(Number(quantity || 0) * Number(product.price)).toLocaleString()}
+                {(Number(quantity) * Number(product.price)).toLocaleString()}
               </div>
 
               <button
@@ -196,13 +181,16 @@ export default function Sales() {
               >
                 Record Sale
               </button>
+
             </div>
           ) : (
             <p className="muted">
-              Scan a barcode or enter a product code to begin.
+              Scan a QR code to begin.
             </p>
           )}
+
         </div>
+
       </div>
 
       <div className="card">
@@ -220,11 +208,14 @@ export default function Sales() {
           </thead>
 
           <tbody>
+
             {sales.map((s) => (
               <tr key={s.id}>
                 <td>
                   {s.product_name}{" "}
-                  <span className="muted">({s.product_code})</span>
+                  <span className="muted">
+                    ({s.product_code})
+                  </span>
                 </td>
 
                 <td>{s.quantity}</td>
@@ -250,8 +241,10 @@ export default function Sales() {
                 </td>
               </tr>
             )}
+
           </tbody>
         </table>
+
       </div>
     </div>
   );
