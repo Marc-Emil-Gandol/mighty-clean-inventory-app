@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
-import { ScanLine, Camera, CameraOff } from "lucide-react";
+import { ScanLine } from "lucide-react";
 import { api } from "../api";
-
-const SCANNER_ELEMENT_ID = "qr-scanner-region";
 
 export default function Sales() {
   const [manualCode, setManualCode] = useState("");
@@ -12,26 +9,71 @@ export default function Sales() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [sales, setSales] = useState([]);
-  const [scanning, setScanning] = useState(false);
-  const scannerRef = useRef(null);
+
+  const inputRef = useRef(null);
+  const barcodeBuffer = useRef("");
+  const barcodeTimer = useRef(null);
 
   function loadSales() {
-    api.getSales().then(setSales).catch((e) => setError(e.message));
+    api.getSales()
+      .then(setSales)
+      .catch((e) => setError(e.message));
   }
 
   useEffect(() => {
     loadSales();
-    return () => {
-      stopScanner();
+
+    inputRef.current?.focus();
+
+    const handleKeyDown = (e) => {
+      // Ignore when typing in quantity field
+      if (
+        document.activeElement &&
+        document.activeElement.type === "number"
+      ) {
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+
+        const code = barcodeBuffer.current.trim();
+
+        if (code) {
+          setManualCode(code);
+          lookup(code);
+        }
+
+        barcodeBuffer.current = "";
+        return;
+      }
+
+      if (e.key.length === 1) {
+        barcodeBuffer.current += e.key;
+
+        clearTimeout(barcodeTimer.current);
+
+        barcodeTimer.current = setTimeout(() => {
+          barcodeBuffer.current = "";
+        }, 100);
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      clearTimeout(barcodeTimer.current);
+    };
   }, []);
 
   async function lookup(code) {
     setError("");
     setMessage("");
+
     try {
       const p = await api.lookupCode(code);
+
       setProduct(p);
       setQuantity(1);
     } catch (err) {
@@ -42,60 +84,35 @@ export default function Sales() {
 
   function handleManualLookup(e) {
     e.preventDefault();
-    if (manualCode.trim()) lookup(manualCode.trim());
-  }
 
-  async function startScanner() {
-    setError("");
-    setScanning(true);
-    try {
-      const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
-      scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 220 },
-        (decodedText) => {
-          let code = decodedText;
-          try {
-            const parsed = JSON.parse(decodedText);
-            if (parsed?.code) code = parsed.code;
-          } catch {
-            /* plain text QR, use as-is */
-          }
-          lookup(code);
-          stopScanner();
-        },
-        () => {} // ignore per-frame scan failures
-      );
-    } catch (err) {
-      setError("Couldn't access the camera. You can still type the code in manually below.");
-      setScanning(false);
-    }
-  }
+    const code = manualCode.trim();
 
-  async function stopScanner() {
-    const scanner = scannerRef.current;
-    if (scanner) {
-      try {
-        await scanner.stop();
-        scanner.clear();
-      } catch {
-        /* already stopped */
-      }
-      scannerRef.current = null;
-    }
-    setScanning(false);
+    if (!code) return;
+
+    lookup(code);
   }
 
   async function handleRecordSale() {
     if (!product) return;
+
     setError("");
+
     try {
-      await api.recordSale({ code: product.code, quantity: Number(quantity) });
+      await api.recordSale({
+        code: product.code,
+        quantity: Number(quantity),
+      });
+
       setMessage(`Sale recorded: ${quantity} × ${product.name}`);
+
       setProduct(null);
       setManualCode("");
+      setQuantity(1);
+
       loadSales();
+
+      barcodeBuffer.current = "";
+      inputRef.current?.focus();
     } catch (err) {
       setError(err.message);
     }
@@ -105,51 +122,60 @@ export default function Sales() {
     <div className="page">
       <div className="page-header">
         <h1>Sales</h1>
-        <p className="page-subtitle">Scan an item's QR code, or enter its product code, to record a sale.</p>
+        <p className="page-subtitle">
+          Scan a barcode with the T1902L USB scanner or enter the product code
+          manually.
+        </p>
       </div>
 
       <div className="panel-grid">
         <div className="card">
-          <h2 className="card-title">Scan item</h2>
-
-          <div id={SCANNER_ELEMENT_ID} className={scanning ? "scanner-box active" : "scanner-box"} />
-
-          <button
-            className={`btn ${scanning ? "btn-secondary" : "btn-primary"} btn-block`}
-            onClick={scanning ? stopScanner : startScanner}
-            style={{ marginTop: 12 }}
-          >
-            {scanning ? <><CameraOff size={16} /> Stop camera</> : <><Camera size={16} /> Start camera scan</>}
-          </button>
-
-          <div className="divider">or enter code manually</div>
+          <h2 className="card-title">Scan Item</h2>
 
           <form onSubmit={handleManualLookup} className="manual-lookup">
             <input
-              placeholder="Product code, e.g. 1001"
+              ref={inputRef}
+              placeholder="Scan barcode or type product code..."
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
             />
+
             <button type="submit" className="btn btn-secondary">
-              <ScanLine size={16} /> Look up
+              <ScanLine size={16} />
+              Look Up
             </button>
           </form>
+
+          <p className="muted" style={{ marginTop: 12 }}>
+            Ready for scanning...
+          </p>
         </div>
 
         <div className="card">
-          <h2 className="card-title">Record sale</h2>
+          <h2 className="card-title">Record Sale</h2>
+
           {error && <div className="form-error">{error}</div>}
           {message && <div className="form-success">{message}</div>}
 
           {product ? (
             <div className="sale-preview">
               <div className="sale-preview-name">{product.name}</div>
-              <div className="muted">Code {product.code} · {product.category}</div>
-              <div className="sale-preview-price">₱{Number(product.price).toFixed(2)} / unit</div>
-              <div className="muted">In stock: {product.stock}</div>
+
+              <div className="muted">
+                Code {product.code} · {product.category}
+              </div>
+
+              <div className="sale-preview-price">
+                ₱{Number(product.price).toFixed(2)} / unit
+              </div>
+
+              <div className="muted">
+                In stock: {product.stock}
+              </div>
 
               <label className="qty-label">
                 Quantity
+
                 <input
                   type="number"
                   min={1}
@@ -159,20 +185,29 @@ export default function Sales() {
                 />
               </label>
 
-              <div className="sale-total">Total: ₱{(Number(quantity || 0) * product.price).toLocaleString()}</div>
+              <div className="sale-total">
+                Total: ₱
+                {(Number(quantity || 0) * Number(product.price)).toLocaleString()}
+              </div>
 
-              <button className="btn btn-primary btn-block" onClick={handleRecordSale}>
-                Record sale
+              <button
+                className="btn btn-primary btn-block"
+                onClick={handleRecordSale}
+              >
+                Record Sale
               </button>
             </div>
           ) : (
-            <p className="muted">Scan or look up a product to get started.</p>
+            <p className="muted">
+              Scan a barcode or enter a product code to begin.
+            </p>
           )}
         </div>
       </div>
 
       <div className="card">
-        <h2 className="card-title">Recent sales</h2>
+        <h2 className="card-title">Recent Sales</h2>
+
         <table className="table">
           <thead>
             <tr>
@@ -183,19 +218,34 @@ export default function Sales() {
               <th>When</th>
             </tr>
           </thead>
+
           <tbody>
             {sales.map((s) => (
               <tr key={s.id}>
-                <td>{s.product_name} <span className="muted">({s.product_code})</span></td>
+                <td>
+                  {s.product_name}{" "}
+                  <span className="muted">({s.product_code})</span>
+                </td>
+
                 <td>{s.quantity}</td>
-                <td>₱{s.total.toLocaleString()}</td>
+
+                <td>₱{Number(s.total).toLocaleString()}</td>
+
                 <td>{s.staff_name || "—"}</td>
-                <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
+
+                <td className="muted">
+                  {new Date(s.created_at).toLocaleString()}
+                </td>
               </tr>
             ))}
+
             {sales.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
+                <td
+                  colSpan={5}
+                  className="muted"
+                  style={{ textAlign: "center" }}
+                >
                   No sales recorded yet.
                 </td>
               </tr>
