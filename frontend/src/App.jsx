@@ -4,8 +4,7 @@ import { Layout } from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Inventory from "./pages/Inventory";
-import Sales from "./pages/Sales";
-import Returns from "./pages/Returns";
+import Orders from "./pages/Orders";
 import Reports from "./pages/Reports";
 import Employees from "./pages/Employees";
 import Customers from "./pages/Customers";
@@ -27,14 +26,13 @@ export default function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="inventory" element={<Inventory />} />
         <Route
-          path="sales"
+          path="orders"
           element={
-            <ProtectedRoute roles={["admin", "sales_staff"]}>
-              <Sales />
+            <ProtectedRoute roles={["admin", "sales_staff", "inventory_staff"]}>
+              <Orders />
             </ProtectedRoute>
           }
         />
-        <Route path="returns" element={<Returns />} />
         <Route
           path="employees"
           element={

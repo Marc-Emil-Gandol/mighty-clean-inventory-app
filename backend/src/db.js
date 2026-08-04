@@ -49,6 +49,18 @@ async function initDb() {
       customer_id INTEGER REFERENCES customers(id),
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      customer_name TEXT NOT NULL,
+      customer_id INTEGER REFERENCES customers(id),
+      handover_date DATE NOT NULL,
+      products JSONB NOT NULL DEFAULT '[]',
+      total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+      total_qty INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL CHECK (status IN ('pending','successful','cancelled','returned')) DEFAULT 'pending',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 
   // ---------- Seed (only runs once, on an empty database) ----------

@@ -6,7 +6,9 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const router = express.Router();
 router.use(requireAuth);
 
-function serialize(p) {
+function serialize(p, outgoing = 0) {
+  const stock = p.stock;
+  const available = stock - outgoing;
   return {
     id: p.id,
     code: p.code,
@@ -14,10 +16,29 @@ function serialize(p) {
     category: p.category,
     cost: Number(p.cost),
     price: Number(p.price),
-    stock: p.stock,
+    stock,
+    outgoing,
+    available,
     lowStockThreshold: p.low_stock_threshold,
-    isLow: p.stock <= p.low_stock_threshold,
+    isLow: stock <= p.low_stock_threshold,
+    isAvailableLow: available < 10,
+    isCritical: available < 0,
   };
+}
+
+async function getPendingOutgoingMap() {
+  const { rows } = await pool.query("SELECT products FROM orders WHERE status = 'pending'");
+  const map = {};
+  rows.forEach((row) => {
+    const lines = row.products || [];
+    lines.forEach((line) => {
+      const pid = line.productId || line.itemId || line.id;
+      const qty = Number(line.qty);
+      if (!pid || !Number.isFinite(qty) || qty <= 0) return;
+      map[pid] = (map[pid] || 0) + qty;
+    });
+  });
+  return map;
 }
 
 // GET /api/inventory?search=&category=
@@ -37,11 +58,28 @@ router.get("/", async (req, res) => {
   query += " ORDER BY id ASC";
 
   try {
+    const outgoingMap = await getPendingOutgoingMap();
     const { rows } = await pool.query(query, params);
-    res.json(rows.map(serialize));
+    res.json(rows.map((p) => serialize(p, outgoingMap[p.id] || 0)));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not load inventory" });
+  }
+});
+
+router.get("/next-code", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT code FROM products
+       WHERE code ~ '^[0-9]+$'
+       ORDER BY code::int DESC
+       LIMIT 1`
+    );
+    const next = rows[0] ? String(Number(rows[0].code) + 1) : "1001";
+    res.json({ code: next });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not generate next product code" });
   }
 });
 
@@ -68,6 +106,14 @@ router.post("/", requireRole("admin", "inventory_staff"), async (req, res) => {
     return res.status(400).json({ error: "Code, name, and category are required" });
   }
   try {
+    const { rows: dupRows } = await pool.query(
+      "SELECT id FROM products WHERE LOWER(name) = LOWER($1)",
+      [name.trim()]
+    );
+    if (dupRows.length > 0) {
+      return res.status(409).json({ error: `A product named "${name.trim()}" already exists` });
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO products (code, name, category, cost, price, stock, low_stock_threshold)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -113,6 +159,27 @@ router.put("/:id", requireRole("admin", "inventory_staff"), async (req, res) => 
     }
     console.error(err);
     res.status(500).json({ error: "Could not update product" });
+  }
+});
+
+router.post("/:id/add-stock", requireRole("admin", "inventory_staff"), async (req, res) => {
+  const qty = Number(req.body.quantity);
+  if (!qty || qty < 1) {
+    return res.status(400).json({ error: "A positive quantity is required" });
+  }
+  try {
+    const { rows: existing } = await pool.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+    if (!existing[0]) return res.status(404).json({ error: "Product not found" });
+
+    const { rows } = await pool.query(
+      "UPDATE products SET stock = stock + $1 WHERE id = $2 RETURNING *",
+      [qty, req.params.id]
+    );
+    const outgoingMap = await getPendingOutgoingMap();
+    res.json(serialize(rows[0], outgoingMap[rows[0].id] || 0));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not add stock" });
   }
 });
 

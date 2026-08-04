@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, QrCode, Search, X } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  QrCode,
+  Search,
+  X,
+  PackagePlus,
+  Package,
+  RefreshCw,
+} from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
-const EMPTY_FORM = { code: "", name: "", category: "", cost: "", price: "", stock: "", lowStockThreshold: 5 };
+const EMPTY_PRODUCT = {
+  code: "",
+  name: "",
+  category: "",
+  cost: "",
+  price: "",
+  stock: "",
+};
 
 export default function Inventory() {
   const { user } = useAuth();
@@ -15,11 +32,20 @@ export default function Inventory() {
   const [category, setCategory] = useState("All Categories");
   const [error, setError] = useState("");
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [choiceOpen, setChoiceOpen] = useState(false);
+  const [addStockOpen, setAddStockOpen] = useState(false);
+  const [addProductOpen, setAddProductOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [qrModal, setQrModal] = useState(null);
 
-  const [qrModal, setQrModal] = useState(null); // { name, dataUrl }
+  const [stockForm, setStockForm] = useState({ productId: "", quantity: "" });
+  const [productForm, setProductForm] = useState(EMPTY_PRODUCT);
+  const [codeLocked, setCodeLocked] = useState(true);
+  const [newCategory, setNewCategory] = useState("");
+  const [localCategories, setLocalCategories] = useState([]);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   async function load() {
     try {
@@ -29,6 +55,10 @@ export default function Inventory() {
       ]);
       setProducts(items);
       setCategories(cats);
+      setLocalCategories((prev) => {
+        const merged = [...new Set([...cats, ...prev])].sort();
+        return merged;
+      });
     } catch (err) {
       setError(err.message);
     }
@@ -39,53 +69,109 @@ export default function Inventory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, category]);
 
-  function openAdd() {
-    setEditingProduct(null);
-    setForm(EMPTY_FORM);
-    setModalOpen(true);
+  async function openAddProduct() {
+    setChoiceOpen(false);
+    setError("");
+    try {
+      const { code } = await api.getNextProductCode();
+      setProductForm({ ...EMPTY_PRODUCT, code });
+      setCodeLocked(true);
+      setNewCategory("");
+      setAddProductOpen(true);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
-  function openEdit(product) {
-    setEditingProduct(product);
-    setForm({
-      code: product.code,
-      name: product.name,
-      category: product.category,
-      cost: product.cost,
-      price: product.price,
-      stock: product.stock,
-      lowStockThreshold: product.lowStockThreshold,
-    });
-    setModalOpen(true);
+  function openAddStock() {
+    setChoiceOpen(false);
+    setStockForm({ productId: "", quantity: "" });
+    setAddStockOpen(true);
   }
 
-  async function handleSave(e) {
+  function handleAddCategory() {
+    const val = newCategory.trim();
+    if (!val) return;
+    if (localCategories.some((c) => c.toLowerCase() === val.toLowerCase())) {
+      setError("That category already exists.");
+      return;
+    }
+    const updated = [...localCategories, val].sort();
+    setLocalCategories(updated);
+    setProductForm({ ...productForm, category: val });
+    setNewCategory("");
+  }
+
+  async function handleAddStock(e) {
     e.preventDefault();
     setError("");
     try {
-      const payload = {
-        ...form,
-        cost: Number(form.cost),
-        price: Number(form.price),
-        stock: Number(form.stock),
-        lowStockThreshold: Number(form.lowStockThreshold) || 5,
-      };
-      if (editingProduct) {
-        await api.updateProduct(editingProduct.id, payload);
-      } else {
-        await api.createProduct(payload);
-      }
-      setModalOpen(false);
+      await api.addStock(stockForm.productId, Number(stockForm.quantity));
+      setAddStockOpen(false);
       load();
     } catch (err) {
       setError(err.message);
     }
   }
 
-  async function handleDelete(product) {
-    if (!confirm(`Delete "${product.name}"? This can't be undone.`)) return;
+  async function handleAddProduct(e) {
+    e.preventDefault();
+    setError("");
     try {
-      await api.deleteProduct(product.id);
+      await api.createProduct({
+        code: productForm.code.trim(),
+        name: productForm.name.trim(),
+        category: productForm.category,
+        cost: Number(productForm.cost),
+        price: Number(productForm.price) || Number(productForm.cost),
+        stock: Number(productForm.stock),
+      });
+      setAddProductOpen(false);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function openEdit(product) {
+    setEditingProduct(product);
+    setProductForm({
+      code: product.code,
+      name: product.name,
+      category: product.category,
+      cost: product.cost,
+      price: product.price,
+      stock: product.stock,
+    });
+    setEditOpen(true);
+  }
+
+  async function handleEdit(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      await api.updateProduct(editingProduct.id, {
+        code: productForm.code,
+        name: productForm.name.trim(),
+        category: productForm.category,
+        cost: Number(productForm.cost),
+        price: Number(productForm.price) || Number(productForm.cost),
+        stock: Number(productForm.stock),
+      });
+      setEditOpen(false);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setError("");
+    try {
+      await api.deleteProduct(deleteTarget.id);
+      setDeleteOpen(false);
+      setDeleteTarget(null);
       load();
     } catch (err) {
       setError(err.message);
@@ -101,6 +187,8 @@ export default function Inventory() {
     }
   }
 
+  const categoryOptions = [...new Set([...categories, ...localCategories])].sort();
+
   return (
     <div className="page">
       <div className="inventory-header">
@@ -108,7 +196,7 @@ export default function Inventory() {
         <div className="inventory-controls">
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option>All Categories</option>
-            {categories.map((c) => (
+            {categoryOptions.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -121,8 +209,8 @@ export default function Inventory() {
             />
           </div>
           {canEdit && (
-            <button className="btn btn-primary" onClick={openAdd}>
-              <Plus size={16} /> Add Product
+            <button className="btn btn-primary" onClick={() => setChoiceOpen(true)}>
+              <Plus size={16} /> Add Stock / Product
             </button>
           )}
         </div>
@@ -137,9 +225,10 @@ export default function Inventory() {
               <th>ID</th>
               <th>Name</th>
               <th>Category</th>
+              <th>In Stock</th>
+              <th>Available</th>
+              <th>Outgoing</th>
               <th>Cost</th>
-              <th>Selling Price</th>
-              <th>Stock</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -149,8 +238,6 @@ export default function Inventory() {
                 <td className="muted">#{p.code}</td>
                 <td className="cell-strong">{p.name}</td>
                 <td>{p.category}</td>
-                <td>₱{Number(p.cost).toFixed(2)}</td>
-                <td>₱{Number(p.price).toFixed(2)}</td>
                 <td>
                   <span className={p.isLow ? "stock-low" : "stock-ok"}>
                     {p.stock}
@@ -158,16 +245,43 @@ export default function Inventory() {
                   </span>
                 </td>
                 <td>
+                  <span
+                    className={
+                      p.isCritical ? "stock-low" : p.isAvailableLow ? "stock-low" : "stock-ok"
+                    }
+                  >
+                    {p.available}
+                    {p.isCritical && " (CRITICAL)"}
+                  </span>
+                </td>
+                <td>{p.outgoing}</td>
+                <td>₱{Number(p.cost).toFixed(2)}</td>
+                <td>
                   <div className="row-actions">
-                    <button className="icon-btn icon-btn-neutral" title="View QR code" onClick={() => handleShowQr(p)}>
+                    <button
+                      className="icon-btn icon-btn-neutral"
+                      title="View QR code"
+                      onClick={() => handleShowQr(p)}
+                    >
                       <QrCode size={16} />
                     </button>
                     {canEdit && (
                       <>
-                        <button className="icon-btn icon-btn-blue" title="Edit" onClick={() => openEdit(p)}>
+                        <button
+                          className="icon-btn icon-btn-blue"
+                          title="Edit"
+                          onClick={() => openEdit(p)}
+                        >
                           <Pencil size={16} />
                         </button>
-                        <button className="icon-btn icon-btn-red" title="Delete" onClick={() => handleDelete(p)}>
+                        <button
+                          className="icon-btn icon-btn-red"
+                          title="Delete"
+                          onClick={() => {
+                            setDeleteTarget(p);
+                            setDeleteOpen(true);
+                          }}
+                        >
                           <Trash2 size={16} />
                         </button>
                       </>
@@ -178,7 +292,7 @@ export default function Inventory() {
             ))}
             {products.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted" style={{ textAlign: "center" }}>
+                <td colSpan={8} className="muted" style={{ textAlign: "center" }}>
                   No products match your search.
                 </td>
               </tr>
@@ -187,78 +301,232 @@ export default function Inventory() {
         </table>
       </div>
 
-      {modalOpen && (
-        <Modal title={editingProduct ? "Edit product" : "Add product"} onClose={() => setModalOpen(false)}>
-          <form onSubmit={handleSave} className="modal-form">
+      {choiceOpen && (
+        <Modal title="What would you like to do?" onClose={() => setChoiceOpen(false)}>
+          <div className="choice-buttons">
+            <button type="button" className="choice-btn" onClick={openAddStock}>
+              <PackagePlus size={28} />
+              <div>
+                <span>Add Stock to Existing Product</span>
+                <small>Increase quantity of a product already in the system</small>
+              </div>
+            </button>
+            <button type="button" className="choice-btn" onClick={openAddProduct}>
+              <Package size={28} />
+              <div>
+                <span>Add New Product</span>
+                <small>Create a brand new product in the inventory</small>
+              </div>
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {addStockOpen && (
+        <Modal title="Add Stock to Existing Product" onClose={() => setAddStockOpen(false)}>
+          <form onSubmit={handleAddStock} className="modal-form">
             <label>
-              Product code
-              <input
+              Select Product
+              <select
                 required
-                value={form.code}
-                onChange={(e) => setForm({ ...form, code: e.target.value })}
-              />
+                value={stockForm.productId}
+                onChange={(e) => setStockForm({ ...stockForm, productId: e.target.value })}
+              >
+                <option value="">-- Choose a product --</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Current: {p.stock})
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
-              Name
+              Quantity to Add
+              <input
+                type="number"
+                min={1}
+                required
+                placeholder="e.g. 50"
+                value={stockForm.quantity}
+                onChange={(e) => setStockForm({ ...stockForm, quantity: e.target.value })}
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setAddStockOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Add Stock
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {addProductOpen && (
+        <Modal title="Add New Product" onClose={() => setAddProductOpen(false)} wide>
+          <form onSubmit={handleAddProduct} className="modal-form">
+            <label>
+              Product Code
+              <div className="code-input-row">
+                <input
+                  required
+                  value={productForm.code}
+                  readOnly={codeLocked}
+                  onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  title={codeLocked ? "Edit product code" : "Use auto-generated code"}
+                  onClick={() => setCodeLocked((v) => !v)}
+                >
+                  <RefreshCw size={14} />
+                  {codeLocked ? "Edit" : "Auto"}
+                </button>
+              </div>
+            </label>
+            <label>
+              Product Name
               <input
                 required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Fabcon Blue Bliss"
+                value={productForm.name}
+                onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
               />
             </label>
             <label>
               Category
-              <input
+              <select
                 required
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              />
+                value={productForm.category}
+                onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
+              >
+                <option value="">-- Select category --</option>
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <div className="new-category-row">
+                <input
+                  placeholder="Or type a new category…"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={handleAddCategory}>
+                  + Add
+                </button>
+              </div>
             </label>
             <div className="form-row">
               <label>
-                Cost
+                Cost (₱)
                 <input
                   type="number"
                   step="0.01"
                   required
-                  value={form.cost}
-                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                  placeholder="0.00"
+                  value={productForm.cost}
+                  onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}
                 />
               </label>
               <label>
-                Selling price
+                Initial Stock
+                <input
+                  type="number"
+                  required
+                  placeholder="0"
+                  value={productForm.stock}
+                  onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setAddProductOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Add Product
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {editOpen && (
+        <Modal title="Edit Product" onClose={() => setEditOpen(false)} wide>
+          <form onSubmit={handleEdit} className="modal-form">
+            <label>
+              Product Name
+              <input
+                required
+                value={productForm.name}
+                onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+              />
+            </label>
+            <label>
+              Category
+              <select
+                required
+                value={productForm.category}
+                onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
+              >
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="form-row">
+              <label>
+                Cost (₱)
                 <input
                   type="number"
                   step="0.01"
                   required
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  value={productForm.cost}
+                  onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}
                 />
               </label>
-            </div>
-            <div className="form-row">
               <label>
                 Stock
                 <input
                   type="number"
                   required
-                  value={form.stock}
-                  onChange={(e) => setForm({ ...form, stock: e.target.value })}
-                />
-              </label>
-              <label>
-                Low stock threshold
-                <input
-                  type="number"
-                  value={form.lowStockThreshold}
-                  onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })}
+                  value={productForm.stock}
+                  onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
                 />
               </label>
             </div>
-            <button type="submit" className="btn btn-primary btn-block">
-              {editingProduct ? "Save changes" : "Add product"}
-            </button>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setEditOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Save Changes
+              </button>
+            </div>
           </form>
+        </Modal>
+      )}
+
+      {deleteOpen && deleteTarget && (
+        <Modal title="Delete Product" onClose={() => setDeleteOpen(false)} small>
+          <p className="delete-msg">
+            Are you sure you want to delete <strong>{deleteTarget.name}</strong>? This action cannot
+            be undone.
+          </p>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-danger" onClick={handleConfirmDelete}>
+              Delete
+            </button>
+          </div>
         </Modal>
       )}
 
@@ -277,10 +545,13 @@ export default function Inventory() {
   );
 }
 
-function Modal({ title, children, onClose }) {
+function Modal({ title, children, onClose, wide, small }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal${wide ? " modal-wide" : ""}${small ? " modal-sm" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="icon-btn icon-btn-neutral" onClick={onClose}>

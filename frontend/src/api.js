@@ -38,11 +38,20 @@ export const api = {
 
   getInventory: (params) => request("/inventory", { params }),
   getCategories: () => request("/inventory/categories"),
+  getNextProductCode: () => request("/inventory/next-code"),
   getProduct: (id) => request(`/inventory/${id}`),
   createProduct: (body) => request("/inventory", { method: "POST", body }),
   updateProduct: (id, body) => request(`/inventory/${id}`, { method: "PUT", body }),
+  addStock: (id, quantity) => request(`/inventory/${id}/add-stock`, { method: "POST", body: { quantity } }),
   deleteProduct: (id) => request(`/inventory/${id}`, { method: "DELETE" }),
   getQrCode: (id) => request(`/inventory/${id}/qrcode`),
+
+  getOrders: () => request("/orders"),
+  createOrder: (body) => request("/orders", { method: "POST", body }),
+  completeOrder: (id) => request(`/orders/${id}/complete`, { method: "PATCH" }),
+  cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: "PATCH" }),
+  returnOrder: (id) => request(`/orders/${id}/return`, { method: "PATCH" }),
+  deleteOrder: (id) => request(`/orders/${id}`, { method: "DELETE" }),
 
   getSales: () => request("/sales"),
   lookupCode: (code) => request(`/sales/lookup/${encodeURIComponent(code)}`),
@@ -60,8 +69,10 @@ export const api = {
   createUser: (body) => request("/users", { method: "POST", body }),
   deleteUser: (id) => request(`/users/${id}`, { method: "DELETE" }),
 
-  getCustomers: () => request("/customers"),
+  getCustomers: (params) => request("/customers", { params }),
+  getCustomerOrders: (id) => request(`/customers/${id}/orders`),
   createCustomer: (body) => request("/customers", { method: "POST", body }),
+  updateCustomer: (id, body) => request(`/customers/${id}`, { method: "PUT", body }),
   deleteCustomer: (id) => request(`/customers/${id}`, { method: "DELETE" }),
 };
 

@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Boxes,
   ShoppingCart,
-  Undo2,
   Users,
   UserSquare2,
   BarChart3,
@@ -14,8 +13,7 @@ import { useAuth } from "../auth/AuthContext";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: null },
   { to: "/inventory", label: "Inventory", icon: Boxes, roles: null },
-  { to: "/sales", label: "Sales", icon: ShoppingCart, roles: ["admin", "sales_staff"] },
-  { to: "/returns", label: "Returns", icon: Undo2, roles: null },
+  { to: "/orders", label: "Orders", icon: ShoppingCart, roles: ["admin", "sales_staff", "inventory_staff"] },
   { to: "/employees", label: "Employees", icon: Users, roles: ["admin"] },
   { to: "/customers", label: "Customers", icon: UserSquare2, roles: null },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: null },
