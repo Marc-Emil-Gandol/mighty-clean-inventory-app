@@ -3,6 +3,25 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
+function activityLabel(a) {
+  if (a.type === "sale") return "Sale";
+  if (a.type === "return") return "Return";
+  if (a.type === "order") return `Order · ${a.status}`;
+  return a.type;
+}
+
+function activityBadgeClass(a) {
+  if (a.type === "sale") return "badge-green";
+  if (a.type === "return") return "badge-amber";
+  if (a.type === "order") {
+    if (a.status === "successful") return "badge-green";
+    if (a.status === "cancelled") return "badge-red";
+    if (a.status === "returned") return "badge-purple";
+    return "badge-amber"; // pending
+  }
+  return "badge-blue";
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -16,6 +35,7 @@ export default function Dashboard() {
   if (!data) return <div className="page">Loading…</div>;
 
   const chartData = data.salesByDay.map((d) => ({ day: d.day.slice(5), total: d.total }));
+  const recentActivity = data.recentActivity || [];
 
   return (
     <div className="page">
@@ -79,27 +99,25 @@ export default function Dashboard() {
           <thead>
             <tr>
               <th>Type</th>
-              <th>Product</th>
+              <th>Details</th>
               <th>Qty</th>
               <th>Total</th>
               <th>When</th>
             </tr>
           </thead>
           <tbody>
-            {data.recentTransactions.map((t) => (
-              <tr key={t.id}>
+            {recentActivity.map((a) => (
+              <tr key={a.id}>
                 <td>
-                  <span className={`badge ${t.type === "sale" ? "badge-green" : "badge-amber"}`}>
-                    {t.type}
-                  </span>
+                  <span className={`badge ${activityBadgeClass(a)}`}>{activityLabel(a)}</span>
                 </td>
-                <td>{t.product_name}</td>
-                <td>{t.quantity}</td>
-                <td>₱{t.total.toLocaleString()}</td>
-                <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
+                <td>{a.description}</td>
+                <td>{a.quantity}</td>
+                <td>₱{Number(a.total).toLocaleString()}</td>
+                <td className="muted">{new Date(a.createdAt).toLocaleString()}</td>
               </tr>
             ))}
-            {data.recentTransactions.length === 0 && (
+            {recentActivity.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
                   No activity yet.

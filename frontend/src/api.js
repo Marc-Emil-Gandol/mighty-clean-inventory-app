@@ -50,7 +50,7 @@ export const api = {
   createOrder: (body) => request("/orders", { method: "POST", body }),
   completeOrder: (id) => request(`/orders/${id}/complete`, { method: "PATCH" }),
   cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: "PATCH" }),
-  returnOrder: (id) => request(`/orders/${id}/return`, { method: "PATCH" }),
+  returnOrder: (id, reason) => request(`/orders/${id}/return`, { method: "PATCH", body: { reason } }),
   deleteOrder: (id) => request(`/orders/${id}`, { method: "DELETE" }),
 
   getSales: () => request("/sales"),

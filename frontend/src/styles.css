@@ -375,6 +375,10 @@ select {
   background: var(--blue-light);
   color: var(--blue);
 }
+.badge-purple {
+  background: var(--purple-light);
+  color: var(--purple);
+}
 
 .row-actions {
   display: flex;
@@ -508,6 +512,11 @@ textarea {
   outline: none;
   background: var(--card);
   color: var(--text);
+  font-family: inherit;
+}
+
+textarea {
+  resize: vertical;
 }
 
 input:focus,
@@ -559,14 +568,18 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   z-index: 50;
+  padding: 24px;
 }
 
+/* Dynamic sizing: modals grow/shrink with their content (bounded by the
+   viewport) instead of using a fixed pixel width. Vertical overflow always
+   scrolls within the modal via max-height + overflow-y. */
 .modal {
   background: var(--card);
   border-radius: var(--radius);
   padding: 22px;
-  width: 380px;
-  max-width: 90vw;
+  width: clamp(320px, 60vw, 560px);
+  max-width: 92vw;
   max-height: 85vh;
   overflow-y: auto;
 }
@@ -731,22 +744,6 @@ textarea:focus {
   margin-bottom: 4px;
 }
 
-@media print {
-  .sidebar,
-  .page-header,
-  .tabs,
-  .report-toolbar {
-    display: none !important;
-  }
-  .app-content {
-    padding: 0;
-  }
-  .card {
-    border: none;
-    box-shadow: none;
-  }
-}
-
 /* ---------- Inventory choice / orders ---------- */
 .choice-buttons {
   display: flex;
@@ -786,11 +783,15 @@ textarea:focus {
 }
 
 .modal-wide {
-  width: 520px;
+  width: clamp(480px, 75vw, 760px);
+}
+
+.modal-order {
+  width: clamp(520px, 80vw, 820px);
 }
 
 .modal-sm {
-  width: 340px;
+  width: clamp(280px, 45vw, 380px);
 }
 
 .modal-actions {
@@ -921,4 +922,105 @@ textarea:focus {
 
 .orders-table td[rowspan] {
   vertical-align: top;
+}
+
+/* ---------- Printable documents (invoice / receipt / return receipt) ---------- */
+.doc-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.printable-doc {
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.printable-doc .doc-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.printable-doc .doc-header h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.printable-doc .doc-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.printable-doc .doc-meta div strong {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+
+.doc-total-row {
+  text-align: right;
+  font-weight: 700;
+  margin-top: 10px;
+  font-size: 15px;
+}
+
+.doc-reason {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.doc-reason strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.doc-reason p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+@media print {
+  .sidebar,
+  .page-header,
+  .tabs,
+  .report-toolbar,
+  .inventory-header,
+  .doc-actions,
+  .modal-header,
+  .table-card {
+    display: none !important;
+  }
+  .app-content {
+    padding: 0;
+  }
+  .card {
+    border: none;
+    box-shadow: none;
+  }
+  .modal-overlay {
+    position: static;
+    background: none;
+    display: block;
+    padding: 0;
+  }
+  .modal {
+    box-shadow: none;
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
 }

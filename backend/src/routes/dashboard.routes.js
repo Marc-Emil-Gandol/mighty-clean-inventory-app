@@ -41,13 +41,46 @@ router.get("/", async (req, res) => {
       )
     ).rows;
 
-    const recentTransactions = (
+    // Recent sale/return transactions
+    const recentTransactionRows = (
       await pool.query(
         `SELECT t.*, p.name AS product_name
          FROM transactions t JOIN products p ON p.id = t.product_id
          ORDER BY t.created_at DESC LIMIT 8`
       )
     ).rows;
+
+    // Recent orders activity (created via the Orders tab)
+    const recentOrderRows = (
+      await pool.query(
+        `SELECT id, customer_name, total_cost, total_qty, status, created_at
+         FROM orders
+         ORDER BY created_at DESC LIMIT 8`
+      )
+    ).rows;
+
+    const recentActivity = [
+      ...recentTransactionRows.map((t) => ({
+        id: `txn-${t.id}`,
+        type: t.type, // 'sale' | 'return'
+        status: null,
+        description: t.product_name,
+        quantity: t.quantity,
+        total: Number(t.total),
+        createdAt: t.created_at,
+      })),
+      ...recentOrderRows.map((o) => ({
+        id: `order-${o.id}`,
+        type: "order",
+        status: o.status, // 'pending' | 'successful' | 'cancelled' | 'returned'
+        description: o.customer_name,
+        quantity: o.total_qty,
+        total: Number(o.total_cost),
+        createdAt: o.created_at,
+      })),
+    ]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 8);
 
     res.json({
       totalProducts,
@@ -60,11 +93,7 @@ router.get("/", async (req, res) => {
         total: Number(d.total),
       })),
       lowStockItems,
-      recentTransactions: recentTransactions.map((t) => ({
-        ...t,
-        unit_price: Number(t.unit_price),
-        total: Number(t.total),
-      })),
+      recentActivity,
     });
   } catch (err) {
     console.error(err);

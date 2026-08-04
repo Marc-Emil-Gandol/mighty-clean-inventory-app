@@ -59,8 +59,12 @@ async function initDb() {
       total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
       total_qty INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL CHECK (status IN ('pending','successful','cancelled','returned')) DEFAULT 'pending',
+      return_reason TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+
+    -- Migration safety net for databases created before return_reason existed
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
   `);
 
   // ---------- Seed (only runs once, on an empty database) ----------

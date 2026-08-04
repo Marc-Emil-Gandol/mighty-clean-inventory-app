@@ -16,6 +16,7 @@ function serializeOrder(row, displayNumber) {
     totalCost: Number(row.total_cost),
     totalQty: row.total_qty,
     status: row.status,
+    returnReason: row.return_reason || null,
     createdAt: row.created_at,
   };
 }
@@ -218,6 +219,11 @@ router.patch("/:id/cancel", requireRole("admin", "sales_staff", "inventory_staff
 
 // PATCH /api/orders/:id/return — restock items from a successful order
 router.patch("/:id/return", requireRole("admin", "sales_staff", "inventory_staff"), async (req, res) => {
+  const { reason } = req.body;
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: "A reason for the return is required" });
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -245,8 +251,8 @@ router.patch("/:id/return", requireRole("admin", "sales_staff", "inventory_staff
     }
 
     const { rows: updated } = await client.query(
-      "UPDATE orders SET status = 'returned' WHERE id = $1 RETURNING *",
-      [req.params.id]
+      "UPDATE orders SET status = 'returned', return_reason = $2 WHERE id = $1 RETURNING *",
+      [req.params.id, String(reason).trim()]
     );
 
     await client.query("COMMIT");
