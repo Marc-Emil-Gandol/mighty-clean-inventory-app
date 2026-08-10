@@ -121,6 +121,10 @@ export default function Reports() {
             <div className="printable-report">
               <h2>Sales Report</h2>
               <p className="muted">Generated {new Date(salesReport.generatedAt).toLocaleString()}</p>
+              <p className="muted" style={{ marginTop: -4 }}>
+                Includes POS sales and completed Orders. Pending, cancelled, and returned orders are
+                excluded.
+              </p>
               <p>
                 {salesReport.totalUnits} units sold · Total revenue ₱
                 {salesReport.totalRevenue.toLocaleString()}
@@ -129,6 +133,7 @@ export default function Reports() {
                 <thead>
                   <tr>
                     <th>Product</th>
+                    <th>Customer</th>
                     <th>Qty</th>
                     <th>Unit price</th>
                     <th>Total</th>
@@ -138,13 +143,24 @@ export default function Reports() {
                 <tbody>
                   {salesReport.sales.map((s) => (
                     <tr key={s.id}>
-                      <td>{s.product_name} ({s.product_code})</td>
+                      <td>
+                        {s.product_name}
+                        {s.product_code ? ` (${s.product_code})` : ""}
+                      </td>
+                      <td className="muted">{s.customer_name || "—"}</td>
                       <td>{s.quantity}</td>
                       <td>₱{s.unit_price.toFixed(2)}</td>
                       <td>₱{s.total.toFixed(2)}</td>
                       <td className="muted">{new Date(s.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
+                  {salesReport.sales.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="muted" style={{ textAlign: "center" }}>
+                        No sales in this range.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, Check, X, Trash2, Undo2, FileText, Printer } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Check, X, Trash2, Undo2, FileText, Printer, ScanLine } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
@@ -50,6 +50,9 @@ export default function Orders() {
   const [customerId, setCustomerId] = useState("");
   const [handoverDate, setHandoverDate] = useState("");
   const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
+  const [scanCode, setScanCode] = useState("");
+  const [scanError, setScanError] = useState("");
+  const scanInputRef = useRef(null);
 
   async function load() {
     try {
@@ -74,7 +77,12 @@ export default function Orders() {
     setCustomerId("");
     setHandoverDate("");
     setLines([{ ...EMPTY_LINE }]);
+    setScanCode("");
+    setScanError("");
     setNewOrderOpen(true);
+    setTimeout(() => {
+      scanInputRef.current?.focus();
+    }, 100);
   }
 
   function addLine() {
@@ -89,6 +97,59 @@ export default function Orders() {
   function removeLine(index) {
     if (lines.length <= 1) return;
     setLines(lines.filter((_, i) => i !== index));
+  }
+
+  /** Adds a scanned product to the order lines, or bumps its qty by 1 if it's already there */
+  function addOrIncrementLine(product) {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => String(l.productId) === String(product.id));
+      if (idx >= 0) {
+        const next = [...prev];
+        const currentQty = Number(next[idx].qty) || 0;
+        next[idx] = { ...next[idx], qty: currentQty + 1 };
+        return next;
+      }
+      // Fill the first line instead of appending if it's still empty
+      if (prev.length === 1 && !prev[0].productId) {
+        return [{ productId: product.id, qty: 1 }];
+      }
+      return [...prev, { productId: product.id, qty: 1 }];
+    });
+  }
+
+  async function handleScanAdd(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return;
+
+    // The T1902L can also emit QR payloads that decode to JSON — unwrap those
+    let code = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.code) code = parsed.code;
+    } catch {
+      // plain barcode/code, not JSON
+    }
+
+    setScanError("");
+    try {
+      const product = await api.lookupCode(code);
+      // Make sure the scanned product has a matching <option> in the dropdown
+      setProducts((prev) =>
+        prev.some((p) => p.id === product.id) ? prev : [...prev, { ...product, available: product.stock }]
+      );
+      addOrIncrementLine(product);
+      setScanCode("");
+    } catch (err) {
+      setScanError(err.message);
+    } finally {
+      scanInputRef.current?.focus();
+    }
+  }
+
+  function handleScanKeyDown(e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    handleScanAdd(scanCode);
   }
 
   async function handleCreateOrder(e) {
@@ -381,6 +442,22 @@ export default function Orders() {
                 No customers yet — add one on the Customers tab first.
               </p>
             )}
+            <label>
+              Scan to add product
+              <div className="manual-lookup">
+                <input
+                  ref={scanInputRef}
+                  placeholder="Scan a product QR/barcode…"
+                  value={scanCode}
+                  onChange={(e) => setScanCode(e.target.value)}
+                  onKeyDown={handleScanKeyDown}
+                />
+                <button type="button" className="btn btn-secondary" onClick={() => handleScanAdd(scanCode)}>
+                  <ScanLine size={16} /> Add
+                </button>
+              </div>
+            </label>
+            {scanError && <div className="form-error">{scanError}</div>}
             <div className="order-products-header">
               <label>Products</label>
               <button type="button" className="btn btn-secondary btn-sm" onClick={addLine}>
