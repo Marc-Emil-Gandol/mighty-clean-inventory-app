@@ -33,6 +33,15 @@ export default function Dashboard() {
 
   const chartData = data.salesByDay.map((d) => ({ day: formatLabel(d.day, period), total: d.total }));
 
+  // Filter recent transactions to sales-related entries only for the dashboard card
+  const recentSales = (data.recentTransactions || []).filter((t) => {
+    const type = String(t.type || "").toLowerCase();
+    if (type.includes("sale") || type.includes("successful") || type.includes("sold")) return true;
+    // fallback: consider any entry with a numeric total > 0 as a sale
+    if (t.total && Number(t.total) > 0) return true;
+    return false;
+  });
+
   return (
     <div className="page">
       <div className="page-header">
@@ -103,7 +112,7 @@ export default function Dashboard() {
       </div>
 
       <div className="card">
-        <h2 className="card-title">Recent activity</h2>
+        <h2 className="card-title">Recent Sales</h2>
         <table className="table">
           <thead>
             <tr>
@@ -115,7 +124,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {data.recentTransactions.map((t) => (
+            {recentSales.map((t) => (
               <tr key={t.id}>
                 <td>
                   <span className={`badge ${t.type === "sale" ? "badge-green" : "badge-amber"}`}>
@@ -128,10 +137,10 @@ export default function Dashboard() {
                 <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
               </tr>
             ))}
-            {data.recentTransactions.length === 0 && (
+            {recentSales.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
-                  No activity yet.
+                  No recent sales yet.
                 </td>
               </tr>
             )}
