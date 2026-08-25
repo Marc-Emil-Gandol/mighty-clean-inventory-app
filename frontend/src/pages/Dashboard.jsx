@@ -18,14 +18,6 @@ function formatLabel(day, period) {
   return day.slice(5);
 }
 
-function activityBadgeClass(action) {
-  const a = String(action).toLowerCase();
-  if (a.includes("successful") || a.includes("sale")) return "badge-green";
-  if (a.includes("return") || a.includes("cancel")) return "badge-amber";
-  if (a.includes("report") || a.includes("inventory")) return "badge-blue";
-  return "badge-blue";
-}
-
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -115,8 +107,8 @@ export default function Dashboard() {
         <table className="table">
           <thead>
             <tr>
-              <th>Action</th>
-              <th>Item</th>
+              <th>Type</th>
+              <th>Product</th>
               <th>Qty</th>
               <th>Total</th>
               <th>When</th>
@@ -126,13 +118,13 @@ export default function Dashboard() {
             {data.recentTransactions.map((t) => (
               <tr key={t.id}>
                 <td>
-                  <span className={`badge ${activityBadgeClass(t.type)}`}>
+                  <span className={`badge ${t.type === "sale" ? "badge-green" : "badge-amber"}`}>
                     {t.type}
                   </span>
                 </td>
                 <td>{t.product_name}</td>
                 <td>{t.quantity}</td>
-                <td>{t.total ? `₱${Number(t.total).toLocaleString()}` : "—"}</td>
+                <td>₱{t.total.toLocaleString()}</td>
                 <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
               </tr>
             ))}

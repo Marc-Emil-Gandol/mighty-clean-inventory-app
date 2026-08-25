@@ -189,15 +189,9 @@ export default function Reports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {salesReport.sales.map((s, i) => (
-                    <tr key={`${s.id}-${i}`}>
-                      <td>
-                        {s.product_name}
-                        {s.product_code ? ` (${s.product_code})` : ""}
-                        {s.customer_name ? (
-                          <span className="muted"> · {s.customer_name}</span>
-                        ) : null}
-                      </td>
+                  {salesReport.sales.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.product_name} ({s.product_code})</td>
                       <td>{s.quantity}</td>
                       <td>₱{s.unit_price.toFixed(2)}</td>
                       <td>₱{s.total.toFixed(2)}</td>
