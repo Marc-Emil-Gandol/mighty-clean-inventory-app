@@ -59,6 +59,7 @@ async function initDb() {
       total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
       total_qty INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL CHECK (status IN ('pending','successful','cancelled','returned')) DEFAULT 'pending',
+      completed_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
@@ -84,6 +85,20 @@ async function initDb() {
       metadata JSONB,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+    UPDATE orders o
+    SET completed_at = a.created_at
+    FROM activity_log a
+    WHERE a.report_ref_id = o.id
+      AND a.entity_type = 'order'
+      AND a.action = 'Marked order as successful'
+      AND o.status = 'successful'
+      AND o.completed_at IS NULL;
+    UPDATE orders SET completed_at = created_at
+    WHERE status = 'successful' AND completed_at IS NULL;
   `);
 
   // ---------- Seed (only runs once, on an empty database) ----------

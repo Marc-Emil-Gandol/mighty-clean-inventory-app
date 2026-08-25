@@ -213,7 +213,7 @@ router.patch("/:id/complete", requireRole("admin", "sales_staff", "inventory_sta
     }
 
     const { rows: updated } = await client.query(
-      "UPDATE orders SET status = 'successful' WHERE id = $1 RETURNING *",
+      "UPDATE orders SET status = 'successful', completed_at = NOW() WHERE id = $1 RETURNING *",
       [req.params.id]
     );
 

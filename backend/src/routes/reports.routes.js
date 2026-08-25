@@ -64,23 +64,42 @@ router.get("/inventory", async (req, res) => {
 
 router.get("/sales", async (req, res) => {
   const { from, to } = req.query;
-  let query = `SELECT t.*, p.name AS product_name, p.code AS product_code
-               FROM transactions t JOIN products p ON p.id = t.product_id
-               WHERE t.type = 'sale'`;
+  let query = `
+    SELECT
+      o.id,
+      o.customer_name,
+      o.completed_at AS created_at,
+      line->>'name' AS product_name,
+      p.code AS product_code,
+      (line->>'qty')::int AS quantity,
+      (line->>'cost')::double precision AS unit_price,
+      ((line->>'qty')::int * (line->>'cost')::double precision) AS total
+    FROM orders o
+    CROSS JOIN LATERAL jsonb_array_elements(o.products) AS line
+    LEFT JOIN products p ON p.id = COALESCE(
+      NULLIF(line->>'productId', '')::int,
+      NULLIF(line->>'itemId', '')::int,
+      NULLIF(line->>'id', '')::int
+    )
+    WHERE o.status = 'successful' AND o.completed_at IS NOT NULL`;
   const params = [];
   if (from) {
     params.push(from);
-    query += ` AND t.created_at::date >= $${params.length}::date`;
+    query += ` AND o.completed_at::date >= $${params.length}::date`;
   }
   if (to) {
     params.push(to);
-    query += ` AND t.created_at::date <= $${params.length}::date`;
+    query += ` AND o.completed_at::date <= $${params.length}::date`;
   }
-  query += " ORDER BY t.created_at DESC";
+  query += " ORDER BY o.completed_at DESC, o.id DESC";
 
   try {
     const { rows } = await pool.query(query, params);
-    const sales = rows.map((s) => ({ ...s, unit_price: Number(s.unit_price), total: Number(s.total) }));
+    const sales = rows.map((s) => ({
+      ...s,
+      unit_price: Number(s.unit_price),
+      total: Number(s.total),
+    }));
     const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
     const totalUnits = sales.reduce((sum, s) => sum + s.quantity, 0);
 
