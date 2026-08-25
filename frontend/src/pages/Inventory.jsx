@@ -9,6 +9,7 @@ import {
   PackagePlus,
   Package,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
@@ -38,6 +39,9 @@ export default function Inventory() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [qrModal, setQrModal] = useState(null);
+  const [damageOpen, setDamageOpen] = useState(false);
+  const [damageTarget, setDamageTarget] = useState(null);
+  const [damageForm, setDamageForm] = useState({ quantity: "", issue: "" });
 
   const [stockForm, setStockForm] = useState({ productId: "", quantity: "" });
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT);
@@ -187,6 +191,21 @@ export default function Inventory() {
     }
   }
 
+  async function handleReportDamage(e) {
+    e.preventDefault();
+    setError("");
+    try {
+      await api.reportDamage(damageTarget.id, {
+        quantity: Number(damageForm.quantity),
+        issue: damageForm.issue.trim(),
+      });
+      setDamageOpen(false);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const categoryOptions = [...new Set([...categories, ...localCategories])].sort();
 
   return (
@@ -273,6 +292,17 @@ export default function Inventory() {
                           onClick={() => openEdit(p)}
                         >
                           <Pencil size={16} />
+                        </button>
+                        <button
+                          className="icon-btn icon-btn-amber"
+                          title="Report Damage Item/s"
+                          onClick={() => {
+                            setDamageTarget(p);
+                            setDamageForm({ quantity: "", issue: "" });
+                            setDamageOpen(true);
+                          }}
+                        >
+                          <AlertTriangle size={16} />
                         </button>
                         <button
                           className="icon-btn icon-btn-red"
@@ -507,6 +537,42 @@ export default function Inventory() {
               </button>
               <button type="submit" className="btn btn-primary">
                 Save Changes
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {damageOpen && damageTarget && (
+        <Modal title={`Report Damage — ${damageTarget.name}`} onClose={() => setDamageOpen(false)}>
+          <form onSubmit={handleReportDamage} className="modal-form">
+            <label>
+              Quantity damaged
+              <input
+                type="number"
+                min={1}
+                max={damageTarget.stock}
+                required
+                value={damageForm.quantity}
+                onChange={(e) => setDamageForm({ ...damageForm, quantity: e.target.value })}
+              />
+            </label>
+            <label>
+              What was the issue?
+              <textarea
+                required
+                rows={3}
+                placeholder="e.g. Torn packaging, leaked contents"
+                value={damageForm.issue}
+                onChange={(e) => setDamageForm({ ...damageForm, issue: e.target.value })}
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDamageOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-danger">
+                Submit Damage Report
               </button>
             </div>
           </form>

@@ -59,12 +59,31 @@ async function initDb() {
       total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
       total_qty INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL CHECK (status IN ('pending','successful','cancelled','returned')) DEFAULT 'pending',
-      return_reason TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
-    -- Migration safety net for databases created before return_reason existed
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
+    CREATE TABLE IF NOT EXISTS damage_reports (
+      id SERIAL PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES products(id),
+      quantity INTEGER NOT NULL,
+      issue TEXT NOT NULL,
+      staff_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id SERIAL PRIMARY KEY,
+      actor_id INTEGER REFERENCES users(id),
+      actor_name TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_label TEXT,
+      details TEXT,
+      report_type TEXT,
+      report_ref_id INTEGER,
+      metadata JSONB,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 
   // ---------- Seed (only runs once, on an empty database) ----------

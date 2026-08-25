@@ -13,6 +13,7 @@ const reportsRoutes = require("./routes/reports.routes");
 const usersRoutes = require("./routes/users.routes");
 const customersRoutes = require("./routes/customers.routes");
 const ordersRoutes = require("./routes/orders.routes");
+const activityRoutes = require("./routes/activity.routes");
 
 const app = express();
 app.use(cors());
@@ -29,6 +30,7 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/customers", customersRoutes);
 app.use("/api/orders", ordersRoutes);
+app.use("/api/activity", activityRoutes);
 
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 // eslint-disable-next-line no-unused-vars
@@ -49,3 +51,4 @@ initDb()
     console.error("Failed to initialize the database:", err);
     process.exit(1);
   });
+  

@@ -6,6 +6,7 @@ import {
   Users,
   UserSquare2,
   BarChart3,
+  ClipboardList,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { to: "/employees", label: "Employees", icon: Users, roles: ["admin"] },
   { to: "/customers", label: "Customers", icon: UserSquare2, roles: null },
   { to: "/reports", label: "Reports", icon: BarChart3, roles: null },
+  { to: "/activity", label: "Activity Log", icon: ClipboardList, roles: ["admin"] },
 ];
 
 export function Sidebar() {

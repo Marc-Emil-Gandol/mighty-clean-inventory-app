@@ -8,6 +8,7 @@ import Orders from "./pages/Orders";
 import Reports from "./pages/Reports";
 import Employees from "./pages/Employees";
 import Customers from "./pages/Customers";
+import ActivityLog from "./pages/ActivityLog";
 
 export default function App() {
   return (
@@ -43,6 +44,14 @@ export default function App() {
         />
         <Route path="customers" element={<Customers />} />
         <Route path="reports" element={<Reports />} />
+        <Route
+          path="activity"
+          element={
+            <ProtectedRoute roles={["admin"]}>
+              <ActivityLog />
+            </ProtectedRoute>
+          }
+        />
       </Route>
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

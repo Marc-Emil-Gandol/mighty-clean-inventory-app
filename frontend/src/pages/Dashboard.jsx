@@ -3,39 +3,35 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 
-function activityLabel(a) {
-  if (a.type === "sale") return "Sale";
-  if (a.type === "return") return "Return";
-  if (a.type === "order") return `Order · ${a.status}`;
-  return a.type;
-}
+const PERIODS = [
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "yearly", label: "Yearly" },
+];
 
-function activityBadgeClass(a) {
-  if (a.type === "sale") return "badge-green";
-  if (a.type === "return") return "badge-amber";
-  if (a.type === "order") {
-    if (a.status === "successful") return "badge-green";
-    if (a.status === "cancelled") return "badge-red";
-    if (a.status === "returned") return "badge-purple";
-    return "badge-amber"; // pending
-  }
-  return "badge-blue";
+function formatLabel(day, period) {
+  const date = new Date(day);
+  if (period === "yearly") return String(date.getFullYear());
+  if (period === "monthly") return date.toLocaleDateString("en-PH", { month: "short", year: "2-digit" });
+  if (period === "weekly") return date.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+  return day.slice(5);
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [period, setPeriod] = useState("daily");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getDashboard().then(setData).catch((e) => setError(e.message));
-  }, []);
+    api.getDashboard({ period }).then(setData).catch((e) => setError(e.message));
+  }, [period]);
 
   if (error) return <div className="page"><div className="form-error">{error}</div></div>;
   if (!data) return <div className="page">Loading…</div>;
 
-  const chartData = data.salesByDay.map((d) => ({ day: d.day.slice(5), total: d.total }));
-  const recentActivity = data.recentActivity || [];
+  const chartData = data.salesByDay.map((d) => ({ day: formatLabel(d.day, period), total: d.total }));
 
   return (
     <div className="page">
@@ -62,7 +58,20 @@ export default function Dashboard() {
 
       <div className="panel-grid">
         <div className="card">
-          <h2 className="card-title">Sales, last 7 days</h2>
+          <div className="chart-toolbar">
+            <h2 className="card-title">Sales overview</h2>
+            <div className="tabs">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  className={period === p.key ? "tab active" : "tab"}
+                  onClick={() => setPeriod(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ width: "100%", height: 260 }}>
             <ResponsiveContainer>
               <LineChart data={chartData}>
@@ -99,25 +108,27 @@ export default function Dashboard() {
           <thead>
             <tr>
               <th>Type</th>
-              <th>Details</th>
+              <th>Product</th>
               <th>Qty</th>
               <th>Total</th>
               <th>When</th>
             </tr>
           </thead>
           <tbody>
-            {recentActivity.map((a) => (
-              <tr key={a.id}>
+            {data.recentTransactions.map((t) => (
+              <tr key={t.id}>
                 <td>
-                  <span className={`badge ${activityBadgeClass(a)}`}>{activityLabel(a)}</span>
+                  <span className={`badge ${t.type === "sale" ? "badge-green" : "badge-amber"}`}>
+                    {t.type}
+                  </span>
                 </td>
-                <td>{a.description}</td>
-                <td>{a.quantity}</td>
-                <td>₱{Number(a.total).toLocaleString()}</td>
-                <td className="muted">{new Date(a.createdAt).toLocaleString()}</td>
+                <td>{t.product_name}</td>
+                <td>{t.quantity}</td>
+                <td>₱{t.total.toLocaleString()}</td>
+                <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
               </tr>
             ))}
-            {recentActivity.length === 0 && (
+            {data.recentTransactions.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
                   No activity yet.

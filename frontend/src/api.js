@@ -45,12 +45,15 @@ export const api = {
   addStock: (id, quantity) => request(`/inventory/${id}/add-stock`, { method: "POST", body: { quantity } }),
   deleteProduct: (id) => request(`/inventory/${id}`, { method: "DELETE" }),
   getQrCode: (id) => request(`/inventory/${id}/qrcode`),
+  reportDamage: (id, body) => request(`/inventory/${id}/report-damage`, { method: "POST", body }),
+  getDamageReport: (id) => request(`/inventory/damage-reports/${id}`),
 
   getOrders: () => request("/orders"),
+  getOrder: (id) => request(`/orders/${id}`),
   createOrder: (body) => request("/orders", { method: "POST", body }),
   completeOrder: (id) => request(`/orders/${id}/complete`, { method: "PATCH" }),
   cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: "PATCH" }),
-  returnOrder: (id, reason) => request(`/orders/${id}/return`, { method: "PATCH", body: { reason } }),
+  returnOrder: (id) => request(`/orders/${id}/return`, { method: "PATCH" }),
   deleteOrder: (id) => request(`/orders/${id}`, { method: "DELETE" }),
 
   getSales: () => request("/sales"),
@@ -60,7 +63,7 @@ export const api = {
   getReturns: () => request("/returns"),
   recordReturn: (body) => request("/returns", { method: "POST", body }),
 
-  getDashboard: () => request("/dashboard"),
+  getDashboard: (params) => request("/dashboard", { params }),
 
   getInventoryReport: () => request("/reports/inventory"),
   getSalesReport: (params) => request("/reports/sales", { params }),
@@ -74,6 +77,8 @@ export const api = {
   createCustomer: (body) => request("/customers", { method: "POST", body }),
   updateCustomer: (id, body) => request(`/customers/${id}`, { method: "PUT", body }),
   deleteCustomer: (id) => request(`/customers/${id}`, { method: "DELETE" }),
+
+  getActivityLog: () => request("/activity"),
 };
 
 export { getToken };

@@ -1,6 +1,7 @@
 const express = require("express");
 const { pool } = require("../db");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const { logActivity } = require("../utils/activityLog");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -16,7 +17,6 @@ function serializeOrder(row, displayNumber) {
     totalCost: Number(row.total_cost),
     totalQty: row.total_qty,
     status: row.status,
-    returnReason: row.return_reason || null,
     createdAt: row.created_at,
   };
 }
@@ -92,6 +92,26 @@ router.get("/outgoing", async (req, res) => {
   }
 });
 
+// GET /api/orders/:id — used for printing invoices/receipts
+router.get("/:id", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      const [orderResult, numMap] = await Promise.all([
+        client.query("SELECT * FROM orders WHERE id = $1", [req.params.id]),
+        buildDisplayNumberMap(client),
+      ]);
+      if (!orderResult.rows[0]) return res.status(404).json({ error: "Order not found" });
+      res.json(serializeOrder(orderResult.rows[0], numMap[orderResult.rows[0].id]));
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load order" });
+  }
+});
+
 // POST /api/orders
 router.post("/", requireRole("admin", "sales_staff", "inventory_staff"), async (req, res) => {
   const { customer, handoverDate, products, customerId } = req.body;
@@ -137,7 +157,20 @@ router.post("/", requireRole("admin", "sales_staff", "inventory_staff"), async (
       ]
     );
     const numMap = await buildDisplayNumberMap(pool);
-    res.status(201).json(serializeOrder(rows[0], numMap[rows[0].id]));
+    const created = rows[0];
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Created order",
+      entityType: "order",
+      entityLabel: `Order for ${created.customer_name}`,
+      details: `${totalQty} item(s), ₱${totalCost.toFixed(2)}`,
+      reportType: "sales_invoice",
+      reportRefId: created.id,
+    });
+
+    res.status(201).json(serializeOrder(created, numMap[created.id]));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not create order" });
@@ -186,6 +219,18 @@ router.patch("/:id/complete", requireRole("admin", "sales_staff", "inventory_sta
 
     await client.query("COMMIT");
     const numMap = await buildDisplayNumberMap(pool);
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Marked order as successful",
+      entityType: "order",
+      entityLabel: `Order for ${updated[0].customer_name}`,
+      details: `₱${Number(updated[0].total_cost).toFixed(2)}`,
+      reportType: "sales_receipt",
+      reportRefId: updated[0].id,
+    });
+
     res.json(serializeOrder(updated[0], numMap[updated[0].id]));
   } catch (err) {
     await client.query("ROLLBACK");
@@ -210,6 +255,15 @@ router.patch("/:id/cancel", requireRole("admin", "sales_staff", "inventory_staff
       [req.params.id]
     );
     const numMap = await buildDisplayNumberMap(pool);
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Cancelled order",
+      entityType: "order",
+      entityLabel: `Order for ${updated[0].customer_name}`,
+    });
+
     res.json(serializeOrder(updated[0], numMap[updated[0].id]));
   } catch (err) {
     console.error(err);
@@ -219,11 +273,6 @@ router.patch("/:id/cancel", requireRole("admin", "sales_staff", "inventory_staff
 
 // PATCH /api/orders/:id/return — restock items from a successful order
 router.patch("/:id/return", requireRole("admin", "sales_staff", "inventory_staff"), async (req, res) => {
-  const { reason } = req.body;
-  if (!reason || !String(reason).trim()) {
-    return res.status(400).json({ error: "A reason for the return is required" });
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -251,12 +300,23 @@ router.patch("/:id/return", requireRole("admin", "sales_staff", "inventory_staff
     }
 
     const { rows: updated } = await client.query(
-      "UPDATE orders SET status = 'returned', return_reason = $2 WHERE id = $1 RETURNING *",
-      [req.params.id, String(reason).trim()]
+      "UPDATE orders SET status = 'returned' WHERE id = $1 RETURNING *",
+      [req.params.id]
     );
 
     await client.query("COMMIT");
     const numMap = await buildDisplayNumberMap(pool);
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Processed return",
+      entityType: "order",
+      entityLabel: `Order for ${updated[0].customer_name}`,
+      reportType: "return_receipt",
+      reportRefId: updated[0].id,
+    });
+
     res.json(serializeOrder(updated[0], numMap[updated[0].id]));
   } catch (err) {
     await client.query("ROLLBACK");
@@ -295,6 +355,16 @@ router.delete("/:id", requireRole("admin", "sales_staff", "inventory_staff"), as
 
     await client.query("DELETE FROM orders WHERE id = $1", [req.params.id]);
     await client.query("COMMIT");
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Deleted order",
+      entityType: "order",
+      entityLabel: `Order for ${order.customer_name}`,
+      details: `Status was "${order.status}", ₱${Number(order.total_cost).toFixed(2)}`,
+    });
+
     res.json({ success: true });
   } catch (err) {
     await client.query("ROLLBACK");

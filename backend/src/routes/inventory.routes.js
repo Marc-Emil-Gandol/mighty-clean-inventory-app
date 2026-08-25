@@ -2,6 +2,7 @@ const express = require("express");
 const QRCode = require("qrcode");
 const { pool } = require("../db");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const { logActivity } = require("../utils/activityLog");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -39,6 +40,25 @@ async function getPendingOutgoingMap() {
     });
   });
   return map;
+}
+
+function buildEditDetails(existing, changes) {
+  const labels = {
+    code: "Code",
+    name: "Name",
+    category: "Category",
+    cost: "Cost",
+    price: "Price",
+    stock: "Stock",
+    low_stock_threshold: "Low stock threshold",
+  };
+  const parts = [];
+  for (const key of Object.keys(changes)) {
+    if (String(existing[key]) !== String(changes[key])) {
+      parts.push(`${labels[key] || key}: ${existing[key]} → ${changes[key]}`);
+    }
+  }
+  return parts.join(", ");
 }
 
 // GET /api/inventory?search=&category=
@@ -93,6 +113,29 @@ router.get("/categories", async (req, res) => {
   }
 });
 
+// GET /api/inventory/damage-reports/:id -> for printing
+router.get("/damage-reports/:id", async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT d.*, p.name AS product_name, p.code AS product_code, u.name AS staff_name
+     FROM damage_reports d
+     JOIN products p ON p.id = d.product_id
+     LEFT JOIN users u ON u.id = d.staff_id
+     WHERE d.id = $1`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Damage report not found" });
+  const d = rows[0];
+  res.json({
+    id: d.id,
+    productName: d.product_name,
+    productCode: d.product_code,
+    quantity: d.quantity,
+    issue: d.issue,
+    staffName: d.staff_name,
+    createdAt: d.created_at,
+  });
+});
+
 router.get("/:id", async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: "Product not found" });
@@ -119,6 +162,16 @@ router.post("/", requireRole("admin", "inventory_staff"), async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [code, name, category, cost || 0, price || 0, stock || 0, lowStockThreshold || 5]
     );
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Added new product",
+      entityType: "product",
+      entityLabel: rows[0].name,
+      details: `Code ${rows[0].code} · ${rows[0].category} · Initial stock ${rows[0].stock}`,
+    });
+
     res.status(201).json(serialize(rows[0]));
   } catch (err) {
     if (err.code === "23505") {
@@ -146,12 +199,27 @@ router.put("/:id", requireRole("admin", "inventory_staff"), async (req, res) => 
     lowStockThreshold = existing.low_stock_threshold,
   } = req.body;
 
+  const changes = { code, name, category, cost, price, stock, low_stock_threshold: lowStockThreshold };
+  const details = buildEditDetails(existing, changes);
+
   try {
     const { rows } = await pool.query(
       `UPDATE products SET code=$1, name=$2, category=$3, cost=$4, price=$5, stock=$6, low_stock_threshold=$7
        WHERE id=$8 RETURNING *`,
       [code, name, category, cost, price, stock, lowStockThreshold, req.params.id]
     );
+
+    if (details) {
+      await logActivity({
+        actorId: req.user.id,
+        actorName: req.user.name,
+        action: "Edited product",
+        entityType: "product",
+        entityLabel: rows[0].name,
+        details,
+      });
+    }
+
     res.json(serialize(rows[0]));
   } catch (err) {
     if (err.code === "23505") {
@@ -175,6 +243,16 @@ router.post("/:id/add-stock", requireRole("admin", "inventory_staff"), async (re
       "UPDATE products SET stock = stock + $1 WHERE id = $2 RETURNING *",
       [qty, req.params.id]
     );
+
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Added stock",
+      entityType: "product",
+      entityLabel: rows[0].name,
+      details: `+${qty} unit(s) (now ${rows[0].stock})`,
+    });
+
     const outgoingMap = await getPendingOutgoingMap();
     res.json(serialize(rows[0], outgoingMap[rows[0].id] || 0));
   } catch (err) {
@@ -183,9 +261,81 @@ router.post("/:id/add-stock", requireRole("admin", "inventory_staff"), async (re
   }
 });
 
+// POST /api/inventory/:id/report-damage
+router.post("/:id/report-damage", requireRole("admin", "inventory_staff"), async (req, res) => {
+  const qty = Number(req.body.quantity);
+  const issue = (req.body.issue || "").trim();
+  if (!qty || qty < 1) {
+    return res.status(400).json({ error: "A positive quantity is required" });
+  }
+  if (!issue) {
+    return res.status(400).json({ error: "Please describe the issue" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: existing } = await client.query("SELECT * FROM products WHERE id = $1 FOR UPDATE", [
+      req.params.id,
+    ]);
+    const product = existing[0];
+    if (!product) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Product not found" });
+    }
+    if (product.stock < qty) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Only ${product.stock} in stock` });
+    }
+
+    await client.query("UPDATE products SET stock = stock - $1 WHERE id = $2", [qty, product.id]);
+    const { rows: damageRows } = await client.query(
+      `INSERT INTO damage_reports (product_id, quantity, issue, staff_id) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [product.id, qty, issue, req.user.id]
+    );
+
+    await client.query("COMMIT");
+
+    const damage = damageRows[0];
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Reported damaged stock",
+      entityType: "product",
+      entityLabel: product.name,
+      details: `${qty} unit(s) marked damaged — ${issue}`,
+      reportType: "damage_report",
+      reportRefId: damage.id,
+    });
+
+    const outgoingMap = await getPendingOutgoingMap();
+    const { rows: refreshed } = await pool.query("SELECT * FROM products WHERE id = $1", [product.id]);
+    res.status(201).json(serialize(refreshed[0], outgoingMap[refreshed[0].id] || 0));
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Could not report damaged stock" });
+  } finally {
+    client.release();
+  }
+});
+
 router.delete("/:id", requireRole("admin", "inventory_staff"), async (req, res) => {
+  const { rows: existing } = await pool.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
+  if (!existing[0]) return res.status(404).json({ error: "Product not found" });
+
   const result = await pool.query("DELETE FROM products WHERE id = $1", [req.params.id]);
   if (result.rowCount === 0) return res.status(404).json({ error: "Product not found" });
+
+  await logActivity({
+    actorId: req.user.id,
+    actorName: req.user.name,
+    action: "Removed product",
+    entityType: "product",
+    entityLabel: existing[0].name,
+    details: `Code ${existing[0].code}`,
+  });
+
   res.json({ success: true });
 });
 
