@@ -1,15 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Check, X, Trash2, Undo2, FileText, ScanLine } from "lucide-react";
+import { Plus, Check, X, Trash2, Undo2, FileText, Printer, ScanLine } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { Modal } from "../components/Modal";
-import { PrintableReport, orderReportType } from "../components/PrintableReport";
 
 const EMPTY_LINE = { productId: "", qty: "" };
 
 function formatDate(value) {
   if (!value) return "—";
+  // Handles both plain "YYYY-MM-DD" strings and full ISO timestamps
   return String(value).slice(0, 10);
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function documentTitle(status) {
@@ -278,7 +288,6 @@ export default function Orders() {
       {error && <div className="form-error">{error}</div>}
 
       <div className="card table-card">
-        <div className="table-wrap">
         <table className="table orders-table">
           <thead>
             <tr>
@@ -397,11 +406,10 @@ export default function Orders() {
             })}
           </tbody>
         </table>
-        </div>
       </div>
 
       {newOrderOpen && (
-        <Modal title="Create New Order" onClose={() => setNewOrderOpen(false)} size="order">
+        <Modal title="Create New Order" onClose={() => setNewOrderOpen(false)} order>
           <form onSubmit={handleCreateOrder} className="modal-form">
             <div className="form-row">
               <label>
@@ -504,7 +512,7 @@ export default function Orders() {
       )}
 
       {deleteOpen && deleteTarget && (
-        <Modal title="Delete Order" onClose={() => setDeleteOpen(false)} size="sm">
+        <Modal title="Delete Order" onClose={() => setDeleteOpen(false)} small>
           <p className="delete-msg">
             Are you sure you want to delete the order for{" "}
             <strong>{deleteTarget.customer}</strong>? This action cannot be undone.
@@ -521,7 +529,7 @@ export default function Orders() {
       )}
 
       {returnOpen && returnTarget && (
-        <Modal title="Process Return" onClose={() => setReturnOpen(false)} size="sm">
+        <Modal title="Process Return" onClose={() => setReturnOpen(false)} small>
           <form onSubmit={handleConfirmReturn} className="modal-form">
             <p className="delete-msg">
               Restocking items from the order for <strong>{returnTarget.customer}</strong>.
@@ -549,13 +557,107 @@ export default function Orders() {
       )}
 
       {docOpen && docTarget && (
-        <PrintableReport
-          type={orderReportType(docTarget.status)}
-          data={docTarget}
-          generatedBy={user?.name}
-          onClose={() => setDocOpen(false)}
-        />
+        <Modal title={documentTitle(docTarget.status)} onClose={() => setDocOpen(false)} wide>
+          <div className="doc-actions">
+            <button type="button" className="btn btn-primary" onClick={() => window.print()}>
+              <Printer size={16} /> Print
+            </button>
+          </div>
+          <OrderDocument order={docTarget} />
+        </Modal>
       )}
+    </div>
+  );
+}
+
+function OrderDocument({ order }) {
+  const lines = order.products && order.products.length ? order.products : [];
+  const title = documentTitle(order.status);
+
+  return (
+    <div className="printable-doc">
+      <div className="doc-header">
+        <div className="logo-mighty">MIGHTY CLEAN</div>
+        <h2>{title}</h2>
+      </div>
+      <div className="doc-meta">
+        <div>
+          <strong>Order #</strong>
+          {order.displayNumber || order.id}
+        </div>
+        <div>
+          <strong>Status</strong>
+          {order.status}
+        </div>
+        <div>
+          <strong>Customer</strong>
+          {order.customer}
+        </div>
+        <div>
+          <strong>Handover Date</strong>
+          {formatDate(order.handoverDate)}
+        </div>
+        <div>
+          <strong>Date Created</strong>
+          {formatDateTime(order.createdAt)}
+        </div>
+      </div>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Unit Cost</th>
+            <th>Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, i) => (
+            <tr key={i}>
+              <td>{line.name}</td>
+              <td>{line.qty}</td>
+              <td>₱{Number(line.cost).toFixed(2)}</td>
+              <td>₱{(Number(line.cost) * Number(line.qty)).toFixed(2)}</td>
+            </tr>
+          ))}
+          {lines.length === 0 && (
+            <tr>
+              <td colSpan={4} className="muted" style={{ textAlign: "center" }}>
+                No line items.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <div className="doc-total-row">Total: ₱{Number(order.totalCost).toFixed(2)}</div>
+
+      {order.status === "returned" && (
+        <div className="doc-reason">
+          <strong>Reason for Return</strong>
+          <p>{order.returnReason || "—"}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, wide, small, order }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className={`modal${wide ? " modal-wide" : ""}${small ? " modal-sm" : ""}${
+          order ? " modal-order" : ""
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="icon-btn icon-btn-neutral" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

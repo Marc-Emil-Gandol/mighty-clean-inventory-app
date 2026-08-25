@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Eye } from "lucide-react";
 import { api } from "../api";
-import { PrintableReport, hasPrintableActivity } from "../components/PrintableReport";
+import { PrintableReport } from "../components/PrintableReport";
 
 export default function ActivityLog() {
   const [logs, setLogs] = useState([]);
@@ -51,7 +51,6 @@ export default function ActivityLog() {
       {error && <div className="form-error">{error}</div>}
 
       <div className="card table-card">
-        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -73,7 +72,7 @@ export default function ActivityLog() {
                 <td>{log.details || "—"}</td>
                 <td>{log.actorName || "—"}</td>
                 <td>
-                  {hasPrintableActivity(log) ? (
+                  {log.reportType ? (
                     <button
                       className="icon-btn icon-btn-neutral"
                       title="View printable report"
@@ -96,7 +95,6 @@ export default function ActivityLog() {
             )}
           </tbody>
         </table>
-        </div>
       </div>
 
       {preview && (

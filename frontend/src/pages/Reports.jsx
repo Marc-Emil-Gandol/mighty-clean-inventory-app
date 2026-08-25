@@ -1,8 +1,7 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Printer } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { printNode } from "../utils/printDocument";
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10);
@@ -32,8 +31,6 @@ export default function Reports() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [error, setError] = useState("");
-  const inventoryPrintRef = useRef(null);
-  const salesPrintRef = useRef(null);
 
   async function loadInventoryReport() {
     setError("");
@@ -85,17 +82,14 @@ export default function Reports() {
               Generate report
             </button>
             {inventoryReport && (
-              <button
-                className="btn btn-primary"
-                onClick={() => printNode("Inventory Report", inventoryPrintRef.current)}
-              >
+              <button className="btn btn-primary" onClick={() => window.print()}>
                 <Printer size={16} /> Print
               </button>
             )}
           </div>
 
           {inventoryReport && (
-            <div className="printable-report" ref={inventoryPrintRef}>
+            <div className="printable-report">
               <h2>Inventory Report</h2>
               <p className="muted">Generated {new Date(inventoryReport.generatedAt).toLocaleString()}</p>
               <p>
@@ -170,17 +164,14 @@ export default function Reports() {
               Generate custom range
             </button>
             {salesReport && (
-              <button
-                className="btn btn-primary"
-                onClick={() => printNode("Sales Report", salesPrintRef.current)}
-              >
+              <button className="btn btn-primary" onClick={() => window.print()}>
                 <Printer size={16} /> Print
               </button>
             )}
           </div>
 
           {salesReport && (
-            <div className="printable-report" ref={salesPrintRef}>
+            <div className="printable-report">
               <h2>Sales Report</h2>
               <p className="muted">Generated {new Date(salesReport.generatedAt).toLocaleString()}</p>
               <p>

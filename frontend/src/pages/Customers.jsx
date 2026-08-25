@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Search, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, X, Eye } from "lucide-react";
 import { api } from "../api";
-import { Modal } from "../components/Modal";
 
 const EMPTY_FORM = { name: "", contact: "" };
 
@@ -117,7 +116,6 @@ export default function Customers() {
       {error && <div className="form-error">{error}</div>}
 
       <div className="card table-card">
-        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -170,7 +168,6 @@ export default function Customers() {
             )}
           </tbody>
         </table>
-        </div>
       </div>
 
       {addOpen && (
@@ -234,7 +231,7 @@ export default function Customers() {
       )}
 
       {deleteOpen && deleteTarget && (
-        <Modal title="Delete Customer" onClose={() => setDeleteOpen(false)} size="sm">
+        <Modal title="Delete Customer" onClose={() => setDeleteOpen(false)} small>
           <p className="delete-msg">
             Are you sure you want to delete <strong>{deleteTarget.name}</strong>?
           </p>
@@ -253,7 +250,7 @@ export default function Customers() {
         <Modal
           title={`Orders — ${ordersTarget.name}`}
           onClose={() => setOrdersOpen(false)}
-          size="lg"
+          wide
         >
           {customerOrders.length === 0 ? (
             <p className="muted">No orders found for this customer.</p>
@@ -291,6 +288,25 @@ export default function Customers() {
           )}
         </Modal>
       )}
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, wide, small }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className={`modal${wide ? " modal-wide" : ""}${small ? " modal-sm" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="icon-btn icon-btn-neutral" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

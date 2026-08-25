@@ -12,13 +12,22 @@ const PERIODS = {
   yearly: { trunc: "year", interval: "4 years" },
 };
 
-async function buildDisplayNumberMap() {
-  const { rows } = await pool.query("SELECT id FROM orders ORDER BY created_at ASC, id ASC");
-  const map = {};
-  rows.forEach((row, i) => {
-    map[row.id] = 1001 + i;
-  });
-  return map;
+function mapActivityRow(row) {
+  let total = row.total_cost != null ? Number(row.total_cost) : 0;
+  if (!total && row.details) {
+    const match = row.details.match(/₱([\d,.]+)/);
+    if (match) total = Number(match[1].replace(/,/g, ""));
+  }
+
+  return {
+    id: row.id,
+    type: row.action,
+    product_name: row.entity_label || row.action,
+    quantity: row.total_qty != null ? row.total_qty : "—",
+    total,
+    created_at: row.created_at,
+    actor_name: row.actor_name,
+  };
 }
 
 router.get("/", async (req, res) => {
@@ -63,17 +72,15 @@ router.get("/", async (req, res) => {
       )
     ).rows;
 
-    const recentSalesRows = (
+    const recentTransactions = (
       await pool.query(
-        `SELECT id, customer_name, total_qty, total_cost, completed_at
-         FROM orders
-         WHERE status = 'successful' AND completed_at IS NOT NULL
-         ORDER BY completed_at DESC
+        `SELECT a.*, o.total_qty, o.total_cost
+         FROM activity_log a
+         LEFT JOIN orders o ON o.id = a.report_ref_id AND a.entity_type = 'order'
+         ORDER BY a.created_at DESC
          LIMIT 8`
       )
     ).rows;
-
-    const numMap = await buildDisplayNumberMap();
 
     res.json({
       totalProducts,
@@ -87,14 +94,7 @@ router.get("/", async (req, res) => {
         total: Number(d.total),
       })),
       lowStockItems,
-      recentSales: recentSalesRows.map((row) => ({
-        id: row.id,
-        displayNumber: numMap[row.id] || row.id,
-        customer: row.customer_name,
-        totalQty: row.total_qty,
-        totalCost: Number(row.total_cost),
-        completedAt: row.completed_at,
-      })),
+      recentTransactions: recentTransactions.map(mapActivityRow),
     });
   } catch (err) {
     console.error(err);

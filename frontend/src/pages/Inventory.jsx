@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { Modal } from "../components/Modal";
 
 const EMPTY_PRODUCT = {
   code: "",
@@ -239,7 +238,6 @@ export default function Inventory() {
       {error && <div className="form-error">{error}</div>}
 
       <div className="card table-card">
-        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -331,7 +329,6 @@ export default function Inventory() {
             )}
           </tbody>
         </table>
-        </div>
       </div>
 
       {choiceOpen && (
@@ -397,7 +394,7 @@ export default function Inventory() {
       )}
 
       {addProductOpen && (
-        <Modal title="Add New Product" onClose={() => setAddProductOpen(false)} size="lg">
+        <Modal title="Add New Product" onClose={() => setAddProductOpen(false)} wide>
           <form onSubmit={handleAddProduct} className="modal-form">
             <label>
               Product Code
@@ -489,7 +486,7 @@ export default function Inventory() {
       )}
 
       {editOpen && (
-        <Modal title="Edit Product" onClose={() => setEditOpen(false)} size="lg">
+        <Modal title="Edit Product" onClose={() => setEditOpen(false)} wide>
           <form onSubmit={handleEdit} className="modal-form">
             <label>
               Product Name
@@ -583,7 +580,7 @@ export default function Inventory() {
       )}
 
       {deleteOpen && deleteTarget && (
-        <Modal title="Delete Product" onClose={() => setDeleteOpen(false)} size="sm">
+        <Modal title="Delete Product" onClose={() => setDeleteOpen(false)} small>
           <p className="delete-msg">
             Are you sure you want to delete <strong>{deleteTarget.name}</strong>? This action cannot
             be undone.
@@ -610,6 +607,25 @@ export default function Inventory() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, wide, small }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className={`modal${wide ? " modal-wide" : ""}${small ? " modal-sm" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button className="icon-btn icon-btn-neutral" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
