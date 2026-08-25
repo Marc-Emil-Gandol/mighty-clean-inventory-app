@@ -91,6 +91,7 @@ export default function Employees() {
 
         <div className="card">
           <h2 className="card-title">Team</h2>
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>

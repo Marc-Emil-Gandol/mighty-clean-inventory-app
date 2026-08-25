@@ -18,14 +18,6 @@ function formatLabel(day, period) {
   return day.slice(5);
 }
 
-function activityBadgeClass(action) {
-  const a = String(action).toLowerCase();
-  if (a.includes("successful") || a.includes("sale")) return "badge-green";
-  if (a.includes("return") || a.includes("cancel")) return "badge-amber";
-  if (a.includes("report") || a.includes("inventory")) return "badge-blue";
-  return "badge-blue";
-}
-
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -40,6 +32,7 @@ export default function Dashboard() {
   if (!data) return <div className="page">Loading…</div>;
 
   const chartData = data.salesByDay.map((d) => ({ day: formatLabel(d.day, period), total: d.total }));
+  const recentSales = data.recentSales || [];
 
   return (
     <div className="page">
@@ -110,41 +103,41 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card">
-        <h2 className="card-title">Recent activity</h2>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Action</th>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Total</th>
-              <th>When</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.recentTransactions.map((t) => (
-              <tr key={t.id}>
-                <td>
-                  <span className={`badge ${activityBadgeClass(t.type)}`}>
-                    {t.type}
-                  </span>
-                </td>
-                <td>{t.product_name}</td>
-                <td>{t.quantity}</td>
-                <td>{t.total ? `₱${Number(t.total).toLocaleString()}` : "—"}</td>
-                <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
-            {data.recentTransactions.length === 0 && (
+      <div className="card table-card">
+        <h2 className="card-title table-card-title">Recent sales</h2>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
-                  No activity yet.
-                </td>
+                <th>Order</th>
+                <th>Customer</th>
+                <th>Qty</th>
+                <th>Total</th>
+                <th>When</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {recentSales.map((s) => (
+                <tr key={s.id}>
+                  <td className="muted">#{s.displayNumber || s.id}</td>
+                  <td className="cell-strong">{s.customer}</td>
+                  <td>{s.totalQty}</td>
+                  <td>₱{Number(s.totalCost).toLocaleString()}</td>
+                  <td className="muted">
+                    {s.completedAt ? new Date(s.completedAt).toLocaleString() : "—"}
+                  </td>
+                </tr>
+              ))}
+              {recentSales.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
+                    No sales recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
