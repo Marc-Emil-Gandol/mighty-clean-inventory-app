@@ -33,15 +33,6 @@ export default function Dashboard() {
 
   const chartData = data.salesByDay.map((d) => ({ day: formatLabel(d.day, period), total: d.total }));
 
-  // Filter recent transactions to sales-related entries only for the dashboard card
-  const recentSales = (data.recentTransactions || []).filter((t) => {
-    const type = String(t.type || "").toLowerCase();
-    if (type.includes("sale") || type.includes("successful") || type.includes("sold")) return true;
-    // fallback: consider any entry with a numeric total > 0 as a sale
-    if (t.total && Number(t.total) > 0) return true;
-    return false;
-  });
-
   return (
     <div className="page">
       <div className="page-header">
@@ -116,7 +107,6 @@ export default function Dashboard() {
         <table className="table">
           <thead>
             <tr>
-              <th>Type</th>
               <th>Product</th>
               <th>Qty</th>
               <th>Total</th>
@@ -124,23 +114,18 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {recentSales.map((t) => (
+            {data.recentSales.map((t) => (
               <tr key={t.id}>
-                <td>
-                  <span className={`badge ${t.type === "sale" ? "badge-green" : "badge-amber"}`}>
-                    {t.type}
-                  </span>
-                </td>
                 <td>{t.product_name}</td>
                 <td>{t.quantity}</td>
                 <td>₱{t.total.toLocaleString()}</td>
                 <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
               </tr>
             ))}
-            {recentSales.length === 0 && (
+            {data.recentSales.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted" style={{ textAlign: "center" }}>
-                  No recent sales yet.
+                <td colSpan={4} className="muted" style={{ textAlign: "center" }}>
+                  No sales yet.
                 </td>
               </tr>
             )}

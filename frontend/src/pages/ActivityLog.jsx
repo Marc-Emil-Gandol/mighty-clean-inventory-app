@@ -3,6 +3,15 @@ import { Eye } from "lucide-react";
 import { api } from "../api";
 import { PrintableReport } from "../components/PrintableReport";
 
+const PRINTABLE_REPORT_TYPES = new Set([
+  "sales_invoice",
+  "sales_receipt",
+  "return_receipt",
+  "damage_report",
+  "inventory_report",
+  "sales_report",
+]);
+
 export default function ActivityLog() {
   const [logs, setLogs] = useState([]);
   const [error, setError] = useState("");
@@ -33,8 +42,6 @@ export default function ActivityLog() {
         setError("No printable report is available for this record.");
         return;
       }
-      // Show the name of the person who originally performed the action,
-      // not the admin currently viewing/printing it.
       setPreview({ type: log.reportType, data, generatedBy: log.actorName });
     } catch (err) {
       setError(err.message);
@@ -62,30 +69,33 @@ export default function ActivityLog() {
             </tr>
           </thead>
           <tbody>
-            {logs.map((log) => (
-              <tr key={log.id}>
-                <td className="muted">{new Date(log.createdAt).toLocaleString()}</td>
-                <td>
-                  <span className="cell-strong">{log.action}</span>
-                  {log.entityLabel && <div className="muted">{log.entityLabel}</div>}
-                </td>
-                <td>{log.details || "—"}</td>
-                <td>{log.actorName || "—"}</td>
-                <td>
-                  {log.reportType ? (
-                    <button
-                      className="icon-btn icon-btn-neutral"
-                      title="View printable report"
-                      onClick={() => handleViewReport(log)}
-                    >
-                      <Eye size={16} />
-                    </button>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {logs.map((log) => {
+              const hasReport = PRINTABLE_REPORT_TYPES.has(log.reportType);
+              return (
+                <tr key={log.id}>
+                  <td className="muted">{new Date(log.createdAt).toLocaleString()}</td>
+                  <td>
+                    <span className="cell-strong">{log.action}</span>
+                    {log.entityLabel && <div className="muted">{log.entityLabel}</div>}
+                  </td>
+                  <td>{log.details || "—"}</td>
+                  <td>{log.actorName || "—"}</td>
+                  <td>
+                    {hasReport ? (
+                      <button
+                        className="icon-btn icon-btn-neutral"
+                        title="View printable report"
+                        onClick={() => handleViewReport(log)}
+                      >
+                        <Eye size={16} />
+                      </button>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {logs.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted" style={{ textAlign: "center" }}>

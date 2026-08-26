@@ -52,10 +52,11 @@ router.get("/", async (req, res) => {
       )
     ).rows;
 
-    const recentTransactions = (
+    const recentSales = (
       await pool.query(
         `SELECT t.*, p.name AS product_name
          FROM transactions t JOIN products p ON p.id = t.product_id
+         WHERE t.type = 'sale'
          ORDER BY t.created_at DESC LIMIT 8`
       )
     ).rows;
@@ -72,7 +73,7 @@ router.get("/", async (req, res) => {
         total: Number(d.total),
       })),
       lowStockItems,
-      recentTransactions: recentTransactions.map((t) => ({
+      recentSales: recentSales.map((t) => ({
         ...t,
         unit_price: Number(t.unit_price),
         total: Number(t.total),

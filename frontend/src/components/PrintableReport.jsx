@@ -44,7 +44,7 @@ function ReportBody({ type, data, generatedBy }) {
   }
 }
 
-function DocHeader({ title, subtitle }) {
+export function DocHeader({ title, subtitle }) {
   return (
     <div className="doc-header">
       <div className="doc-brand">
@@ -57,7 +57,7 @@ function DocHeader({ title, subtitle }) {
   );
 }
 
-function SignatureLine({ name }) {
+export function SignatureLine({ name }) {
   return (
     <div className="signature-block">
       <div className="signature-space" />
