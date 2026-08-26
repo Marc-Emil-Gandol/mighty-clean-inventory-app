@@ -860,16 +860,25 @@
     margin-bottom: 8px;
   }
   
+  /* Fixed: modal itself never scrolls sideways, and the grid track for the
+     product <select> can never grow past its column (minmax(0, 1fr) + explicit
+     min-width:0/width:100% on the field itself). */
+  .modal-order {
+    overflow-x: hidden;
+  }
+  
   .order-line {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 90px 36px;
     gap: 8px;
     align-items: center;
+    width: 100%;
   }
   
   .order-line select,
   .order-line input {
     min-width: 0;
+    max-width: 100%;
     width: 100%;
   }
   
@@ -961,6 +970,17 @@
     justify-content: center;
   }
   
+  /* Force both words solid blue here — the sidebar's rainbow-gradient
+     "CLEAN" relies on a background-clip that many browsers drop when
+     printing, leaving invisible/white text. Plain blue always renders. */
+  .doc-brand .logo-mighty,
+  .doc-brand .logo-clean {
+    color: var(--blue);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+  
   .signature-block {
     margin-top: 60px;
     width: 240px;
@@ -983,7 +1003,12 @@
     width: 720px;
   }
   
-  /* ---------- Print isolation ---------- */
+  /* ---------- Print isolation ----------
+     Hide everything except .printable-report, AND force every layout
+     container that could clip/scroll (app-content is a fixed 100vh with
+     overflow-y:auto to keep the sidebar stable) back to auto/visible during
+     print. Without this reset, the un-fixed modal content gets clipped by
+     that container and prints blank. */
   @media print {
     body * {
       visibility: hidden;
@@ -999,14 +1024,25 @@
       width: 100%;
       padding: 24px;
     }
+    .app-shell,
+    .app-content,
+    .sidebar,
+    .page,
+    .card,
+    .table-card,
+    .modal,
+    .modal-overlay {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
     .modal-overlay {
       position: static !important;
       background: none !important;
+      display: block !important;
     }
     .modal {
       position: static !important;
-      max-height: none !important;
-      overflow: visible !important;
       width: 100% !important;
       max-width: 100% !important;
       box-shadow: none !important;

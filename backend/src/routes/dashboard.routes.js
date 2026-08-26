@@ -12,6 +12,35 @@ const PERIODS = {
   yearly: { trunc: "year", interval: "4 years" },
 };
 
+// Combines the scan-and-sell "transactions" table with completed orders,
+// so completed orders show up in dashboard stats too.
+const SALES_CTE = `
+  WITH sales_data AS (
+    SELECT
+      t.id::text AS row_id,
+      p.name AS product_name,
+      t.quantity,
+      t.total::numeric AS total,
+      t.created_at
+    FROM transactions t
+    JOIN products p ON p.id = t.product_id
+    WHERE t.type = 'sale'
+
+    UNION ALL
+
+    SELECT
+      ('order-' || o.id || '-' || ord.ordinality)::text AS row_id,
+      COALESCE(p.name, ord.line->>'name') AS product_name,
+      COALESCE((ord.line->>'qty')::int, 0) AS quantity,
+      (COALESCE((ord.line->>'cost')::numeric, 0) * COALESCE((ord.line->>'qty')::int, 0))::numeric AS total,
+      o.created_at
+    FROM orders o
+    CROSS JOIN LATERAL jsonb_array_elements(o.products) WITH ORDINALITY AS ord(line, ordinality)
+    LEFT JOIN products p ON p.id = NULLIF(ord.line->>'productId', '')::int
+    WHERE o.status = 'successful'
+  )
+`;
+
 router.get("/", async (req, res) => {
   try {
     const period = PERIODS[req.query.period] ? req.query.period : "daily";
@@ -29,17 +58,19 @@ router.get("/", async (req, res) => {
 
     const todaySales = (
       await pool.query(
-        `SELECT COALESCE(SUM(total), 0) AS total, COALESCE(SUM(quantity), 0)::int AS units
-         FROM transactions
-         WHERE type = 'sale' AND created_at::date = CURRENT_DATE`
+        `${SALES_CTE}
+         SELECT COALESCE(SUM(total), 0) AS total, COALESCE(SUM(quantity), 0)::int AS units
+         FROM sales_data
+         WHERE created_at::date = CURRENT_DATE`
       )
     ).rows[0];
 
     const salesByDayRows = (
       await pool.query(
-        `SELECT date_trunc($1, created_at) AS day, SUM(total) AS total
-         FROM transactions
-         WHERE type = 'sale' AND created_at >= NOW() - $2::interval
+        `${SALES_CTE}
+         SELECT date_trunc($1, created_at) AS day, SUM(total) AS total
+         FROM sales_data
+         WHERE created_at >= NOW() - $2::interval
          GROUP BY day
          ORDER BY day ASC`,
         [trunc, interval]
@@ -54,10 +85,11 @@ router.get("/", async (req, res) => {
 
     const recentSales = (
       await pool.query(
-        `SELECT t.*, p.name AS product_name
-         FROM transactions t JOIN products p ON p.id = t.product_id
-         WHERE t.type = 'sale'
-         ORDER BY t.created_at DESC LIMIT 8`
+        `${SALES_CTE}
+         SELECT row_id, product_name, quantity, total, created_at
+         FROM sales_data
+         ORDER BY created_at DESC
+         LIMIT 8`
       )
     ).rows;
 
@@ -74,9 +106,11 @@ router.get("/", async (req, res) => {
       })),
       lowStockItems,
       recentSales: recentSales.map((t) => ({
-        ...t,
-        unit_price: Number(t.unit_price),
+        id: t.row_id,
+        product_name: t.product_name,
+        quantity: t.quantity,
         total: Number(t.total),
+        created_at: t.created_at,
       })),
     });
   } catch (err) {

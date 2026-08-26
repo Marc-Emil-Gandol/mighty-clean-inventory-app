@@ -62,25 +62,64 @@ router.get("/inventory", async (req, res) => {
   }
 });
 
+// Combines the scan-and-sell "transactions" table with completed orders,
+// so completed orders show up in the Sales Report too.
 router.get("/sales", async (req, res) => {
   const { from, to } = req.query;
-  let query = `SELECT t.*, p.name AS product_name, p.code AS product_code
-               FROM transactions t JOIN products p ON p.id = t.product_id
-               WHERE t.type = 'sale'`;
+
+  let query = `
+    WITH sales_data AS (
+      SELECT
+        t.id::text AS row_id,
+        p.name AS product_name,
+        p.code AS product_code,
+        t.quantity,
+        t.unit_price::numeric AS unit_price,
+        t.total::numeric AS total,
+        t.created_at
+      FROM transactions t
+      JOIN products p ON p.id = t.product_id
+      WHERE t.type = 'sale'
+
+      UNION ALL
+
+      SELECT
+        ('order-' || o.id || '-' || ord.ordinality)::text AS row_id,
+        COALESCE(p.name, ord.line->>'name') AS product_name,
+        p.code AS product_code,
+        COALESCE((ord.line->>'qty')::int, 0) AS quantity,
+        COALESCE((ord.line->>'cost')::numeric, 0) AS unit_price,
+        (COALESCE((ord.line->>'cost')::numeric, 0) * COALESCE((ord.line->>'qty')::int, 0))::numeric AS total,
+        o.created_at
+      FROM orders o
+      CROSS JOIN LATERAL jsonb_array_elements(o.products) WITH ORDINALITY AS ord(line, ordinality)
+      LEFT JOIN products p ON p.id = NULLIF(ord.line->>'productId', '')::int
+      WHERE o.status = 'successful'
+    )
+    SELECT * FROM sales_data WHERE 1=1
+  `;
   const params = [];
   if (from) {
     params.push(from);
-    query += ` AND t.created_at::date >= $${params.length}::date`;
+    query += ` AND created_at::date >= $${params.length}::date`;
   }
   if (to) {
     params.push(to);
-    query += ` AND t.created_at::date <= $${params.length}::date`;
+    query += ` AND created_at::date <= $${params.length}::date`;
   }
-  query += " ORDER BY t.created_at DESC";
+  query += " ORDER BY created_at DESC";
 
   try {
     const { rows } = await pool.query(query, params);
-    const sales = rows.map((s) => ({ ...s, unit_price: Number(s.unit_price), total: Number(s.total) }));
+    const sales = rows.map((s) => ({
+      id: s.row_id,
+      product_name: s.product_name,
+      product_code: s.product_code,
+      quantity: s.quantity,
+      unit_price: Number(s.unit_price),
+      total: Number(s.total),
+      created_at: s.created_at,
+    }));
     const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
     const totalUnits = sales.reduce((sum, s) => sum + s.quantity, 0);
 
