@@ -1,9 +1,14 @@
+import { createPortal } from "react-dom";
 import { X, Printer } from "lucide-react";
 
 export function PrintableReport({ type, data, generatedBy, onClose }) {
   if (!data) return null;
 
-  return (
+  // Always portal straight to <body>, regardless of where this component is
+  // invoked from. This guarantees the modal is never accidentally nested
+  // inside a <table>/<tr> or a scrolling/positioned container — which is
+  // what caused prints to come out blank when opened from inside a table row.
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide printable-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header no-print">
@@ -21,7 +26,8 @@ export function PrintableReport({ type, data, generatedBy, onClose }) {
           <ReportBody type={type} data={data} generatedBy={generatedBy} />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -76,8 +82,6 @@ function OrderDoc({ order, title, generatedBy }) {
       <DocHeader title={title} subtitle={`Order #${order.displayNumber || order.id}`} />
       <p>
         <strong>Customer:</strong> {order.customer}
-        <br />
-        <strong>Handover date:</strong> {order.handoverDate || "—"}
         <br />
         <strong>Date created:</strong>{" "}
         {order.createdAt ? new Date(order.createdAt).toLocaleString() : "—"}

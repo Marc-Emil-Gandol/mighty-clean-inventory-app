@@ -10,7 +10,6 @@ function serializeOrder(row) {
   return {
     id: row.id,
     customer: row.customer_name,
-    handoverDate: row.handover_date,
     products: row.products || [],
     totalCost: Number(row.total_cost),
     totalQty: row.total_qty,

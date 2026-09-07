@@ -1,31 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { Plus, Check, X, Trash2, Undo2, FileText, Printer, ScanLine } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Check, X, Trash2, Undo2, FileText } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { PrintableReport } from "../components/PrintableReport";
 
 const EMPTY_LINE = { productId: "", qty: "" };
 
-function formatDate(value) {
-  if (!value) return "—";
-  // Handles both plain "YYYY-MM-DD" strings and full ISO timestamps
-  return String(value).slice(0, 10);
-}
-
-function formatDateTime(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function documentTitle(status) {
-  if (status === "successful") return "Sales Receipt";
-  if (status === "returned") return "Return Receipt";
-  return "Sales Invoice";
+function reportTypeForOrder(order) {
+  if (order.status === "successful") return "sales_receipt";
+  if (order.status === "returned") return "return_receipt";
+  return "sales_invoice"; // pending or cancelled
 }
 
 export default function Orders() {
@@ -35,35 +19,21 @@ export default function Orders() {
 
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [error, setError] = useState("");
 
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [returnOpen, setReturnOpen] = useState(false);
-  const [returnTarget, setReturnTarget] = useState(null);
-  const [returnReason, setReturnReason] = useState("");
-  const [docOpen, setDocOpen] = useState(false);
-  const [docTarget, setDocTarget] = useState(null);
+  const [previewOrder, setPreviewOrder] = useState(null);
 
-  const [customerId, setCustomerId] = useState("");
-  const [handoverDate, setHandoverDate] = useState("");
+  const [customer, setCustomer] = useState("");
   const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
-  const [scanCode, setScanCode] = useState("");
-  const [scanError, setScanError] = useState("");
-  const scanInputRef = useRef(null);
 
   async function load() {
     try {
-      const [orderList, inventory, customerList] = await Promise.all([
-        api.getOrders(),
-        api.getInventory({}),
-        api.getCustomers({}),
-      ]);
+      const [orderList, inventory] = await Promise.all([api.getOrders(), api.getInventory({})]);
       setOrders(orderList);
       setProducts(inventory);
-      setCustomers(customerList);
     } catch (err) {
       setError(err.message);
     }
@@ -74,15 +44,9 @@ export default function Orders() {
   }, []);
 
   function openNewOrder() {
-    setCustomerId("");
-    setHandoverDate("");
+    setCustomer("");
     setLines([{ ...EMPTY_LINE }]);
-    setScanCode("");
-    setScanError("");
     setNewOrderOpen(true);
-    setTimeout(() => {
-      scanInputRef.current?.focus();
-    }, 100);
   }
 
   function addLine() {
@@ -99,74 +63,12 @@ export default function Orders() {
     setLines(lines.filter((_, i) => i !== index));
   }
 
-  /** Adds a scanned product to the order lines, or bumps its qty by 1 if it's already there */
-  function addOrIncrementLine(product) {
-    setLines((prev) => {
-      const idx = prev.findIndex((l) => String(l.productId) === String(product.id));
-      if (idx >= 0) {
-        const next = [...prev];
-        const currentQty = Number(next[idx].qty) || 0;
-        next[idx] = { ...next[idx], qty: currentQty + 1 };
-        return next;
-      }
-      // Fill the first line instead of appending if it's still empty
-      if (prev.length === 1 && !prev[0].productId) {
-        return [{ productId: product.id, qty: 1 }];
-      }
-      return [...prev, { productId: product.id, qty: 1 }];
-    });
-  }
-
-  async function handleScanAdd(rawValue) {
-    const raw = String(rawValue || "").trim();
-    if (!raw) return;
-
-    // The T1902L can also emit QR payloads that decode to JSON — unwrap those
-    let code = raw;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.code) code = parsed.code;
-    } catch {
-      // plain barcode/code, not JSON
-    }
-
-    setScanError("");
-    try {
-      const product = await api.lookupCode(code);
-      // Make sure the scanned product has a matching <option> in the dropdown
-      setProducts((prev) =>
-        prev.some((p) => p.id === product.id) ? prev : [...prev, { ...product, available: product.stock }]
-      );
-      addOrIncrementLine(product);
-      setScanCode("");
-    } catch (err) {
-      setScanError(err.message);
-    } finally {
-      scanInputRef.current?.focus();
-    }
-  }
-
-  function handleScanKeyDown(e) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    handleScanAdd(scanCode);
-  }
-
   async function handleCreateOrder(e) {
     e.preventDefault();
     setError("");
 
-    if (!customerId) {
-      setError("Please choose a customer.");
-      return;
-    }
-    const selectedCustomer = customers.find((c) => String(c.id) === String(customerId));
-    if (!selectedCustomer) {
-      setError("Please choose a valid customer.");
-      return;
-    }
-    if (!handoverDate) {
-      setError("Please enter a handover date.");
+    if (!customer.trim()) {
+      setError("Please enter a customer name.");
       return;
     }
 
@@ -192,9 +94,7 @@ export default function Orders() {
 
     try {
       await api.createOrder({
-        customer: selectedCustomer.name,
-        customerId: selectedCustomer.id,
-        handoverDate,
+        customer: customer.trim(),
         products: productLines,
       });
       setNewOrderOpen(false);
@@ -224,26 +124,11 @@ export default function Orders() {
     }
   }
 
-  function openReturn(order) {
-    setReturnTarget(order);
-    setReturnReason("");
-    setError("");
-    setReturnOpen(true);
-  }
-
-  async function handleConfirmReturn(e) {
-    e.preventDefault();
-    if (!returnTarget) return;
-    if (!returnReason.trim()) {
-      setError("Please provide a reason for the return.");
-      return;
-    }
+  async function handleReturn(id) {
+    if (!confirm("Process this return and restock the items?")) return;
     setError("");
     try {
-      await api.returnOrder(returnTarget.id, returnReason.trim());
-      setReturnOpen(false);
-      setReturnTarget(null);
-      setReturnReason("");
+      await api.returnOrder(id);
       load();
     } catch (err) {
       setError(err.message);
@@ -263,16 +148,9 @@ export default function Orders() {
     }
   }
 
-  function openDocument(order) {
-    setDocTarget(order);
-    setDocOpen(true);
-  }
-
   function productLabel(p) {
     return `${p.name} (Available: ${p.available})`;
   }
-
-  const documentableStatuses = ["pending", "successful", "returned"];
 
   return (
     <div className="page">
@@ -296,7 +174,6 @@ export default function Orders() {
               <th>Product</th>
               <th>Qty</th>
               <th>Total Cost</th>
-              <th>Handover Date</th>
               <th>Date Created</th>
               <th>Status</th>
               <th>Actions</th>
@@ -305,7 +182,7 @@ export default function Orders() {
           <tbody>
             {orders.length === 0 && (
               <tr>
-                <td colSpan={9} className="muted" style={{ textAlign: "center" }}>
+                <td colSpan={8} className="muted" style={{ textAlign: "center" }}>
                   No orders found.
                 </td>
               </tr>
@@ -340,7 +217,6 @@ export default function Orders() {
                   {i === 0 && (
                     <>
                       <td rowSpan={orderLines.length}>₱{Number(order.totalCost).toFixed(2)}</td>
-                      <td rowSpan={orderLines.length}>{formatDate(order.handoverDate)}</td>
                       <td rowSpan={orderLines.length}>{created}</td>
                       <td rowSpan={orderLines.length}>
                         <span className={`status-badge status-${order.status}`}>
@@ -349,15 +225,13 @@ export default function Orders() {
                       </td>
                       <td rowSpan={orderLines.length}>
                         <div className="row-actions">
-                          {documentableStatuses.includes(order.status) && (
-                            <button
-                              className="icon-btn icon-btn-neutral"
-                              title={`View ${documentTitle(order.status)}`}
-                              onClick={() => openDocument(order)}
-                            >
-                              <FileText size={16} />
-                            </button>
-                          )}
+                          <button
+                            className="icon-btn icon-btn-neutral"
+                            title="View printable report"
+                            onClick={() => setPreviewOrder(order)}
+                          >
+                            <FileText size={16} />
+                          </button>
                           {canManage && order.status === "pending" && (
                             <>
                               <button
@@ -380,7 +254,7 @@ export default function Orders() {
                             <button
                               className="icon-btn icon-btn-amber"
                               title="Process Return"
-                              onClick={() => openReturn(order)}
+                              onClick={() => handleReturn(order.id)}
                             >
                               <Undo2 size={16} />
                             </button>
@@ -409,255 +283,111 @@ export default function Orders() {
       </div>
 
       {newOrderOpen && (
-        <Modal title="Create New Order" onClose={() => setNewOrderOpen(false)} order>
-          <form onSubmit={handleCreateOrder} className="modal-form">
-            <div className="form-row">
-              <label>
-                Customer
-                <select
-                  required
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  <option value="">-- Choose customer --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Handover Date
-                <input
-                  type="date"
-                  required
-                  value={handoverDate}
-                  onChange={(e) => setHandoverDate(e.target.value)}
-                />
-              </label>
+        <div className="modal-overlay" onClick={() => setNewOrderOpen(false)}>
+          <div className="modal modal-wide modal-order" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Create New Order</h3>
+              <button className="icon-btn icon-btn-neutral" onClick={() => setNewOrderOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
-            {customers.length === 0 && (
-              <p className="muted" style={{ margin: 0 }}>
-                No customers yet — add one on the Customers tab first.
-              </p>
-            )}
-            <label>
-              Scan to add product
-              <div className="manual-lookup">
+            <form onSubmit={handleCreateOrder} className="modal-form">
+              <label>
+                Customer Name
                 <input
-                  ref={scanInputRef}
-                  placeholder="Scan a product QR/barcode…"
-                  value={scanCode}
-                  onChange={(e) => setScanCode(e.target.value)}
-                  onKeyDown={handleScanKeyDown}
+                  required
+                  placeholder="e.g. Juan Dela Cruz"
+                  value={customer}
+                  onChange={(e) => setCustomer(e.target.value)}
                 />
-                <button type="button" className="btn btn-secondary" onClick={() => handleScanAdd(scanCode)}>
-                  <ScanLine size={16} /> Add
+              </label>
+              <div className="order-products-header">
+                <label>Products</label>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={addLine}>
+                  + Add Product
                 </button>
               </div>
-            </label>
-            {scanError && <div className="form-error">{scanError}</div>}
-            <div className="order-products-header">
-              <label>Products</label>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={addLine}>
-                + Add Product
-              </button>
-            </div>
-            <div className="order-lines">
-              {lines.map((line, index) => (
-                <div key={index} className="order-line">
-                  <select
-                    required
-                    value={line.productId}
-                    onChange={(e) => updateLine(index, "productId", e.target.value)}
-                  >
-                    <option value="">-- Choose product --</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {productLabel(p)}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    placeholder="Qty"
-                    value={line.qty}
-                    onChange={(e) => updateLine(index, "qty", e.target.value)}
-                  />
-                  {lines.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn-line-remove"
-                      onClick={() => removeLine(index)}
+              <div className="order-lines">
+                {lines.map((line, index) => (
+                  <div key={index} className="order-line">
+                    <select
+                      required
+                      value={line.productId}
+                      onChange={(e) => updateLine(index, "productId", e.target.value)}
                     >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setNewOrderOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-primary">
-                Create Order
-              </button>
-            </div>
-          </form>
-        </Modal>
+                      <option value="">-- Choose product --</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {productLabel(p)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      placeholder="Qty"
+                      value={line.qty}
+                      onChange={(e) => updateLine(index, "qty", e.target.value)}
+                    />
+                    {lines.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn-line-remove"
+                        onClick={() => removeLine(index)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setNewOrderOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Create Order
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {deleteOpen && deleteTarget && (
-        <Modal title="Delete Order" onClose={() => setDeleteOpen(false)} small>
-          <p className="delete-msg">
-            Are you sure you want to delete the order for{" "}
-            <strong>{deleteTarget.customer}</strong>? This action cannot be undone.
-          </p>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </button>
-            <button type="button" className="btn btn-danger" onClick={handleConfirmDelete}>
-              Delete
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {returnOpen && returnTarget && (
-        <Modal title="Process Return" onClose={() => setReturnOpen(false)} small>
-          <form onSubmit={handleConfirmReturn} className="modal-form">
-            <p className="delete-msg">
-              Restocking items from the order for <strong>{returnTarget.customer}</strong>.
-            </p>
-            <label>
-              Reason for return
-              <textarea
-                required
-                rows={3}
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                placeholder="e.g. Wrong item, customer changed mind, damaged goods…"
-              />
-            </label>
-            <div className="modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setReturnOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-danger">
-                Confirm Return
+        <div className="modal-overlay" onClick={() => setDeleteOpen(false)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Order</h3>
+              <button className="icon-btn icon-btn-neutral" onClick={() => setDeleteOpen(false)}>
+                <X size={18} />
               </button>
             </div>
-          </form>
-        </Modal>
-      )}
-
-      {docOpen && docTarget && (
-        <Modal title={documentTitle(docTarget.status)} onClose={() => setDocOpen(false)} wide>
-          <div className="doc-actions">
-            <button type="button" className="btn btn-primary" onClick={() => window.print()}>
-              <Printer size={16} /> Print
-            </button>
+            <p className="delete-msg">
+              Are you sure you want to delete the order for{" "}
+              <strong>{deleteTarget.customer}</strong>? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-danger" onClick={handleConfirmDelete}>
+                Delete
+              </button>
+            </div>
           </div>
-          <OrderDocument order={docTarget} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-function OrderDocument({ order }) {
-  const lines = order.products && order.products.length ? order.products : [];
-  const title = documentTitle(order.status);
-
-  return (
-    <div className="printable-doc">
-      <div className="doc-header">
-        <div className="logo-mighty">MIGHTY CLEAN</div>
-        <h2>{title}</h2>
-      </div>
-      <div className="doc-meta">
-        <div>
-          <strong>Order #</strong>
-          {order.displayNumber || order.id}
-        </div>
-        <div>
-          <strong>Status</strong>
-          {order.status}
-        </div>
-        <div>
-          <strong>Customer</strong>
-          {order.customer}
-        </div>
-        <div>
-          <strong>Handover Date</strong>
-          {formatDate(order.handoverDate)}
-        </div>
-        <div>
-          <strong>Date Created</strong>
-          {formatDateTime(order.createdAt)}
-        </div>
-      </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Qty</th>
-            <th>Unit Cost</th>
-            <th>Line Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line, i) => (
-            <tr key={i}>
-              <td>{line.name}</td>
-              <td>{line.qty}</td>
-              <td>₱{Number(line.cost).toFixed(2)}</td>
-              <td>₱{(Number(line.cost) * Number(line.qty)).toFixed(2)}</td>
-            </tr>
-          ))}
-          {lines.length === 0 && (
-            <tr>
-              <td colSpan={4} className="muted" style={{ textAlign: "center" }}>
-                No line items.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      <div className="doc-total-row">Total: ₱{Number(order.totalCost).toFixed(2)}</div>
-
-      {order.status === "returned" && (
-        <div className="doc-reason">
-          <strong>Reason for Return</strong>
-          <p>{order.returnReason || "—"}</p>
         </div>
       )}
-    </div>
-  );
-}
 
-function Modal({ title, children, onClose, wide, small, order }) {
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className={`modal${wide ? " modal-wide" : ""}${small ? " modal-sm" : ""}${
-          order ? " modal-order" : ""
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3>{title}</h3>
-          <button className="icon-btn icon-btn-neutral" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-        {children}
-      </div>
+      {previewOrder && (
+        <PrintableReport
+          type={reportTypeForOrder(previewOrder)}
+          data={previewOrder}
+          generatedBy={user.name}
+          onClose={() => setPreviewOrder(null)}
+        />
+      )}
     </div>
   );
 }
