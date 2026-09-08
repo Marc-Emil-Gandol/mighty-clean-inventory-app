@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Plus, Check, X, Trash2, Undo2, FileText, ScanLine } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Check, X, Trash2, Undo2, FileText } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { PrintableReport } from "../components/PrintableReport";
@@ -28,8 +28,6 @@ export default function Orders() {
 
   const [customer, setCustomer] = useState("");
   const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
-  const [scanError, setScanError] = useState("");
-  const scanRef = useRef(null);
 
   async function load() {
     try {
@@ -48,75 +46,21 @@ export default function Orders() {
   function openNewOrder() {
     setCustomer("");
     setLines([{ ...EMPTY_LINE }]);
-    setScanError("");
     setNewOrderOpen(true);
-    setTimeout(() => {
-      scanRef.current?.focus();
-    }, 100);
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { ...EMPTY_LINE }]);
+    setLines([...lines, { ...EMPTY_LINE }]);
   }
 
   function updateLine(index, field, value) {
-    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
+    const next = lines.map((line, i) => (i === index ? { ...line, [field]: value } : line));
+    setLines(next);
   }
 
   function removeLine(index) {
-    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
-  }
-
-  // Scan a barcode/QR (USB scanner types the code then sends Enter) or type a
-  // code manually and add it as an order line — same pattern as the Sales
-  // page's scan-to-lookup flow.
-  async function handleScanAdd(e) {
-    e.preventDefault();
-    setScanError("");
-
-    const raw = scanRef.current.value.trim();
-    if (!raw) return;
-
-    let code = raw;
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.code) code = parsed.code;
-    } catch {
-      // plain code, not JSON — use as-is
-    }
-
-    try {
-      const product = await api.lookupCode(code);
-
-      setLines((prev) => {
-        const existingIndex = prev.findIndex((l) => String(l.productId) === String(product.id));
-        if (existingIndex !== -1) {
-          const updated = [...prev];
-          const currentQty = Number(updated[existingIndex].qty) || 0;
-          updated[existingIndex] = { ...updated[existingIndex], qty: String(currentQty + 1) };
-          return updated;
-        }
-        const newLine = { productId: String(product.id), qty: "1" };
-        const emptyIndex = prev.findIndex((l) => !l.productId);
-        if (emptyIndex !== -1) {
-          const updated = [...prev];
-          updated[emptyIndex] = newLine;
-          return updated;
-        }
-        return [...prev, newLine];
-      });
-
-      scanRef.current.value = "";
-      scanRef.current.focus();
-    } catch (err) {
-      setScanError(err.message);
-    }
-  }
-
-  function handleScanKeyDown(e) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    handleScanAdd(e);
+    if (lines.length <= 1) return;
+    setLines(lines.filter((_, i) => i !== index));
   }
 
   async function handleCreateOrder(e) {
@@ -357,23 +301,6 @@ export default function Orders() {
                   onChange={(e) => setCustomer(e.target.value)}
                 />
               </label>
-
-              <label>
-                Scan or Enter Product Code
-                <div className="manual-lookup">
-                  <input
-                    ref={scanRef}
-                    placeholder="Scan barcode or type code…"
-                    onKeyDown={handleScanKeyDown}
-                  />
-                  <button type="button" className="btn btn-secondary" onClick={handleScanAdd}>
-                    <ScanLine size={16} />
-                    Add
-                  </button>
-                </div>
-              </label>
-              {scanError && <div className="form-error">{scanError}</div>}
-
               <div className="order-products-header">
                 <label>Products</label>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={addLine}>
