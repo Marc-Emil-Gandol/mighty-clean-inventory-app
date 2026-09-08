@@ -54,7 +54,6 @@ async function initDb() {
       id SERIAL PRIMARY KEY,
       customer_name TEXT NOT NULL,
       customer_id INTEGER REFERENCES customers(id),
-      handover_date DATE NOT NULL,
       products JSONB NOT NULL DEFAULT '[]',
       total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
       total_qty INTEGER NOT NULL DEFAULT 0,
