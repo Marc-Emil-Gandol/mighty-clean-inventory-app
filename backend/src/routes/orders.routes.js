@@ -12,7 +12,6 @@ function serializeOrder(row, displayNumber) {
     displayNumber,
     customer: row.customer_name,
     customerId: row.customer_id,
-    handoverDate: row.handover_date,
     products: row.products || [],
     totalCost: Number(row.total_cost),
     totalQty: row.total_qty,
@@ -114,13 +113,10 @@ router.get("/:id", async (req, res) => {
 
 // POST /api/orders
 router.post("/", requireRole("admin", "sales_staff", "inventory_staff"), async (req, res) => {
-  const { customer, handoverDate, products, customerId } = req.body;
+  const { customer, products, customerId } = req.body;
 
   if (!customer || !String(customer).trim()) {
     return res.status(400).json({ error: "Customer name is required" });
-  }
-  if (!handoverDate) {
-    return res.status(400).json({ error: "Handover date is required" });
   }
   if (!Array.isArray(products) || products.length === 0) {
     return res.status(400).json({ error: "At least one product line is required" });
@@ -145,12 +141,11 @@ router.post("/", requireRole("admin", "sales_staff", "inventory_staff"), async (
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO orders (customer_name, customer_id, handover_date, products, total_cost, total_qty, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
+      `INSERT INTO orders (customer_name, customer_id, products, total_cost, total_qty, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
       [
         String(customer).trim(),
         customerId || null,
-        handoverDate,
         JSON.stringify(normalized),
         totalCost,
         totalQty,
