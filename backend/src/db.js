@@ -70,6 +70,14 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS goods_receipts (
+      id SERIAL PRIMARY KEY,
+      products JSONB NOT NULL DEFAULT '[]',
+      total_qty INTEGER NOT NULL DEFAULT 0,
+      staff_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id SERIAL PRIMARY KEY,
       actor_id INTEGER REFERENCES users(id),

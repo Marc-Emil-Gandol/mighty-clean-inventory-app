@@ -230,34 +230,81 @@ router.put("/:id", requireRole("admin", "inventory_staff"), async (req, res) => 
   }
 });
 
-router.post("/:id/add-stock", requireRole("admin", "inventory_staff"), async (req, res) => {
-  const qty = Number(req.body.quantity);
-  if (!qty || qty < 1) {
-    return res.status(400).json({ error: "A positive quantity is required" });
+// POST /api/inventory/add-stock-batch
+// Accepts one or more { productId, quantity } lines (e.g. a delivery with
+// multiple products) and records a single printable Goods Receipt for the
+// whole batch.
+router.post("/add-stock-batch", requireRole("admin", "inventory_staff"), async (req, res) => {
+  const { lines } = req.body;
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ error: "At least one product line is required" });
   }
-  try {
-    const { rows: existing } = await pool.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
-    if (!existing[0]) return res.status(404).json({ error: "Product not found" });
 
-    const { rows } = await pool.query(
-      "UPDATE products SET stock = stock + $1 WHERE id = $2 RETURNING *",
-      [qty, req.params.id]
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const receiptLines = [];
+    let totalQty = 0;
+
+    for (const line of lines) {
+      const productId = Number(line.productId);
+      const qty = Number(line.quantity);
+      if (!productId || !qty || qty < 1) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Each line needs a product and a positive quantity" });
+      }
+
+      const { rows: existing } = await client.query(
+        "SELECT * FROM products WHERE id = $1 FOR UPDATE",
+        [productId]
+      );
+      const product = existing[0];
+      if (!product) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: `Product ${productId} not found` });
+      }
+
+      await client.query("UPDATE products SET stock = stock + $1 WHERE id = $2", [qty, productId]);
+      receiptLines.push({ productId, code: product.code, name: product.name, qty });
+      totalQty += qty;
+    }
+
+    const { rows: receiptRows } = await client.query(
+      `INSERT INTO goods_receipts (products, total_qty, staff_id) VALUES ($1, $2, $3) RETURNING *`,
+      [JSON.stringify(receiptLines), totalQty, req.user.id]
     );
 
+    await client.query("COMMIT");
+
+    const receipt = receiptRows[0];
     await logActivity({
       actorId: req.user.id,
       actorName: req.user.name,
-      action: "Added stock",
+      action: "Added stock (Goods Receipt)",
       entityType: "product",
-      entityLabel: rows[0].name,
-      details: `+${qty} unit(s) (now ${rows[0].stock})`,
+      entityLabel: receiptLines.map((l) => l.name).join(", "),
+      details: `${totalQty} unit(s) received across ${receiptLines.length} product(s)`,
+      reportType: "goods_receipt",
+      reportRefId: receipt.id,
     });
 
     const outgoingMap = await getPendingOutgoingMap();
-    res.json(serialize(rows[0], outgoingMap[rows[0].id] || 0));
+    const { rows: refreshedProducts } = await pool.query(
+      "SELECT * FROM products WHERE id = ANY($1::int[])",
+      [receiptLines.map((l) => l.productId)]
+    );
+
+    res.status(201).json({
+      receiptId: receipt.id,
+      products: refreshedProducts.map((p) => serialize(p, outgoingMap[p.id] || 0)),
+    });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "Could not add stock" });
+  } finally {
+    client.release();
   }
 });
 
@@ -324,19 +371,30 @@ router.delete("/:id", requireRole("admin", "inventory_staff"), async (req, res) 
   const { rows: existing } = await pool.query("SELECT * FROM products WHERE id = $1", [req.params.id]);
   if (!existing[0]) return res.status(404).json({ error: "Product not found" });
 
-  const result = await pool.query("DELETE FROM products WHERE id = $1", [req.params.id]);
-  if (result.rowCount === 0) return res.status(404).json({ error: "Product not found" });
+  try {
+    const result = await pool.query("DELETE FROM products WHERE id = $1", [req.params.id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Product not found" });
 
-  await logActivity({
-    actorId: req.user.id,
-    actorName: req.user.name,
-    action: "Removed product",
-    entityType: "product",
-    entityLabel: existing[0].name,
-    details: `Code ${existing[0].code}`,
-  });
+    await logActivity({
+      actorId: req.user.id,
+      actorName: req.user.name,
+      action: "Removed product",
+      entityType: "product",
+      entityLabel: existing[0].name,
+      details: `Code ${existing[0].code}`,
+    });
 
-  res.json({ success: true });
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === "23503") {
+      return res.status(409).json({
+        error:
+          "This product has sales, returns, or damage history and can't be deleted. Consider keeping it with 0 stock instead.",
+      });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Could not delete product" });
+  }
 });
 
 // GET /api/inventory/:id/qrcode -> data URL PNG encoding the product code

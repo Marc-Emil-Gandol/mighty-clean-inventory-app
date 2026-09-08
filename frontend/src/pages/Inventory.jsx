@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Plus,
   Pencil,
@@ -10,6 +10,7 @@ import {
   Package,
   RefreshCw,
   AlertTriangle,
+  ScanLine,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
@@ -23,6 +24,18 @@ const EMPTY_PRODUCT = {
   stock: "",
 };
 
+function extractScannedCode(raw) {
+  let code = String(raw || "").trim();
+  if (!code) return "";
+  try {
+    const parsed = JSON.parse(code);
+    if (parsed && parsed.code) code = parsed.code;
+  } catch {
+    // plain barcode/text, use as-is
+  }
+  return code;
+}
+
 export default function Inventory() {
   const { user } = useAuth();
   const canEdit = user.role === "admin" || user.role === "inventory_staff";
@@ -32,6 +45,7 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All Categories");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [addStockOpen, setAddStockOpen] = useState(false);
@@ -43,7 +57,12 @@ export default function Inventory() {
   const [damageTarget, setDamageTarget] = useState(null);
   const [damageForm, setDamageForm] = useState({ quantity: "", issue: "" });
 
-  const [stockForm, setStockForm] = useState({ productId: "", quantity: "" });
+  // Add Stock (Goods Receipt) — supports multiple product lines in one delivery
+  const [stockLines, setStockLines] = useState([{ productId: "", quantity: "" }]);
+  const [stockModalProducts, setStockModalProducts] = useState([]);
+  const [stockScanValue, setStockScanValue] = useState("");
+  const stockScanRef = useRef(null);
+
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT);
   const [codeLocked, setCodeLocked] = useState(true);
   const [newCategory, setNewCategory] = useState("");
@@ -87,10 +106,67 @@ export default function Inventory() {
     }
   }
 
-  function openAddStock() {
+  async function openAddStock() {
     setChoiceOpen(false);
-    setStockForm({ productId: "", quantity: "" });
+    setError("");
+    setMessage("");
+    setStockLines([{ productId: "", quantity: "" }]);
+    setStockScanValue("");
+    try {
+      // Load the full, unfiltered product list so the dropdown always shows
+      // every product regardless of the main table's current search/filter.
+      const all = await api.getInventory({});
+      setStockModalProducts(all);
+    } catch (err) {
+      setStockModalProducts(products);
+    }
     setAddStockOpen(true);
+  }
+
+  function addStockLine() {
+    setStockLines((prev) => [...prev, { productId: "", quantity: "" }]);
+  }
+
+  function updateStockLine(index, field, value) {
+    setStockLines((prev) => prev.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
+  }
+
+  function removeStockLine(index) {
+    setStockLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  }
+
+  async function handleStockScan(rawValue) {
+    const code = extractScannedCode(rawValue);
+    setStockScanValue("");
+    if (!code) return;
+    setError("");
+    try {
+      const p = await api.lookupCode(code);
+      setStockModalProducts((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]));
+      setStockLines((prev) => {
+        const idx = prev.findIndex((l) => String(l.productId) === String(p.id));
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], quantity: String(Number(next[idx].quantity || 0) + 1) };
+          return next;
+        }
+        const emptyIdx = prev.findIndex((l) => !l.productId);
+        if (emptyIdx >= 0) {
+          const next = [...prev];
+          next[emptyIdx] = { productId: p.id, quantity: "1" };
+          return next;
+        }
+        return [...prev, { productId: p.id, quantity: "1" }];
+      });
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleStockScanKeyDown(e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    handleStockScan(e.target.value);
   }
 
   function handleAddCategory() {
@@ -106,12 +182,26 @@ export default function Inventory() {
     setNewCategory("");
   }
 
-  async function handleAddStock(e) {
+  async function handleAddStockBatch(e) {
     e.preventDefault();
     setError("");
+    setMessage("");
+
+    const lines = stockLines
+      .filter((l) => l.productId && Number(l.quantity) > 0)
+      .map((l) => ({ productId: Number(l.productId), quantity: Number(l.quantity) }));
+
+    if (lines.length === 0) {
+      setError("Add at least one product with a quantity.");
+      return;
+    }
+
     try {
-      await api.addStock(stockForm.productId, Number(stockForm.quantity));
+      const result = await api.addStockBatch(lines);
       setAddStockOpen(false);
+      setMessage(
+        `Stock added — Goods Receipt #${result.receiptId} was created. View or print it under Reports → Goods Receipts.`
+      );
       load();
     } catch (err) {
       setError(err.message);
@@ -236,6 +326,7 @@ export default function Inventory() {
       </div>
 
       {error && <div className="form-error">{error}</div>}
+      {message && <div className="form-success">{message}</div>}
 
       <div className="card table-card">
         <table className="table">
@@ -337,8 +428,8 @@ export default function Inventory() {
             <button type="button" className="choice-btn" onClick={openAddStock}>
               <PackagePlus size={28} />
               <div>
-                <span>Add Stock to Existing Product</span>
-                <small>Increase quantity of a product already in the system</small>
+                <span>Add Stock to Existing Product(s)</span>
+                <small>Record a delivery — one or more products, with quantities</small>
               </div>
             </button>
             <button type="button" className="choice-btn" onClick={openAddProduct}>
@@ -353,34 +444,62 @@ export default function Inventory() {
       )}
 
       {addStockOpen && (
-        <Modal title="Add Stock to Existing Product" onClose={() => setAddStockOpen(false)}>
-          <form onSubmit={handleAddStock} className="modal-form">
+        <Modal title="Add Stock (Goods Receipt)" onClose={() => setAddStockOpen(false)} wide>
+          <form onSubmit={handleAddStockBatch} className="modal-form">
             <label>
-              Select Product
-              <select
-                required
-                value={stockForm.productId}
-                onChange={(e) => setStockForm({ ...stockForm, productId: e.target.value })}
-              >
-                <option value="">-- Choose a product --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (Current: {p.stock})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Quantity to Add
+              Scan product (optional)
               <input
-                type="number"
-                min={1}
-                required
-                placeholder="e.g. 50"
-                value={stockForm.quantity}
-                onChange={(e) => setStockForm({ ...stockForm, quantity: e.target.value })}
+                ref={stockScanRef}
+                autoFocus
+                placeholder="Scan with T-1902L scanner, or type the code and press Enter"
+                value={stockScanValue}
+                onChange={(e) => setStockScanValue(e.target.value)}
+                onKeyDown={handleStockScanKeyDown}
               />
             </label>
+
+            <div className="order-products-header">
+              <label>Products received</label>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={addStockLine}>
+                + Add Product
+              </button>
+            </div>
+            <div className="order-lines">
+              {stockLines.map((line, index) => (
+                <div key={index} className="order-line">
+                  <select
+                    required
+                    value={line.productId}
+                    onChange={(e) => updateStockLine(index, "productId", e.target.value)}
+                  >
+                    <option value="">-- Choose a product --</option>
+                    {stockModalProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (Current: {p.stock})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    placeholder="Qty"
+                    value={line.quantity}
+                    onChange={(e) => updateStockLine(index, "quantity", e.target.value)}
+                  />
+                  {stockLines.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn-line-remove"
+                      onClick={() => removeStockLine(index)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setAddStockOpen(false)}>
                 Cancel

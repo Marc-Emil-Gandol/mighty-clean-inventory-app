@@ -42,7 +42,7 @@ export const api = {
   getProduct: (id) => request(`/inventory/${id}`),
   createProduct: (body) => request("/inventory", { method: "POST", body }),
   updateProduct: (id, body) => request(`/inventory/${id}`, { method: "PUT", body }),
-  addStock: (id, quantity) => request(`/inventory/${id}/add-stock`, { method: "POST", body: { quantity } }),
+  addStockBatch: (lines) => request("/inventory/add-stock-batch", { method: "POST", body: { lines } }),
   deleteProduct: (id) => request(`/inventory/${id}`, { method: "DELETE" }),
   getQrCode: (id) => request(`/inventory/${id}/qrcode`),
   reportDamage: (id, body) => request(`/inventory/${id}/report-damage`, { method: "POST", body }),
@@ -67,6 +67,8 @@ export const api = {
 
   getInventoryReport: () => request("/reports/inventory"),
   getSalesReport: (params) => request("/reports/sales", { params }),
+  getGoodsReceipts: () => request("/reports/goods-receipts"),
+  getGoodsReceipt: (id) => request(`/reports/goods-receipts/${id}`),
 
   getUsers: () => request("/users"),
   createUser: (body) => request("/users", { method: "POST", body }),

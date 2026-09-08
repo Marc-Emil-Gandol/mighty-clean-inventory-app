@@ -150,4 +150,49 @@ router.get("/sales", async (req, res) => {
   }
 });
 
+function serializeGoodsReceipt(row) {
+  return {
+    id: row.id,
+    products: row.products || [],
+    totalQty: row.total_qty,
+    staffName: row.staff_name || null,
+    createdAt: row.created_at,
+  };
+}
+
+// GET /api/reports/goods-receipts -> history list, for the Goods Receipts tab
+router.get("/goods-receipts", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT g.*, u.name AS staff_name
+       FROM goods_receipts g
+       LEFT JOIN users u ON u.id = g.staff_id
+       ORDER BY g.created_at DESC
+       LIMIT 200`
+    );
+    res.json(rows.map(serializeGoodsReceipt));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load goods receipts" });
+  }
+});
+
+// GET /api/reports/goods-receipts/:id -> single receipt, for printing
+router.get("/goods-receipts/:id", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT g.*, u.name AS staff_name
+       FROM goods_receipts g
+       LEFT JOIN users u ON u.id = g.staff_id
+       WHERE g.id = $1`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Goods receipt not found" });
+    res.json(serializeGoodsReceipt(rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load goods receipt" });
+  }
+});
+
 module.exports = router;

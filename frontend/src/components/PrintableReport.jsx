@@ -4,10 +4,6 @@ import { X, Printer } from "lucide-react";
 export function PrintableReport({ type, data, generatedBy, onClose }) {
   if (!data) return null;
 
-  // Always portal straight to <body>, regardless of where this component is
-  // invoked from. This guarantees the modal is never accidentally nested
-  // inside a <table>/<tr> or a scrolling/positioned container — which is
-  // what caused prints to come out blank when opened from inside a table row.
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide printable-modal" onClick={(e) => e.stopPropagation()}>
@@ -45,6 +41,8 @@ function ReportBody({ type, data, generatedBy }) {
       return <InventoryDoc report={data} generatedBy={generatedBy} />;
     case "sales_report":
       return <SalesDoc report={data} generatedBy={generatedBy} />;
+    case "goods_receipt":
+      return <GoodsReceiptDoc receipt={data} generatedBy={generatedBy} />;
     default:
       return <p className="muted">No printable report is available for this record.</p>;
   }
@@ -214,6 +212,42 @@ function SalesDoc({ report, generatedBy }) {
           ))}
         </tbody>
       </table>
+      <SignatureLine name={generatedBy} />
+    </div>
+  );
+}
+
+function GoodsReceiptDoc({ receipt, generatedBy }) {
+  return (
+    <div>
+      <DocHeader title="Goods Receipt" subtitle={`Receipt #${receipt.id}`} />
+      <p>
+        <strong>Received by:</strong> {receipt.staffName || "—"}
+        <br />
+        <strong>Date received:</strong>{" "}
+        {receipt.createdAt ? new Date(receipt.createdAt).toLocaleString() : "—"}
+      </p>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Code</th>
+            <th>Qty Received</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(receipt.products || []).map((line, i) => (
+            <tr key={i}>
+              <td>{line.name}</td>
+              <td>{line.code}</td>
+              <td>{line.qty}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ textAlign: "right", fontWeight: 700 }}>
+        Total units received: {receipt.totalQty}
+      </p>
       <SignatureLine name={generatedBy} />
     </div>
   );

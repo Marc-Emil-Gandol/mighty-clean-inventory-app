@@ -260,7 +260,6 @@ export default function Customers() {
                 <tr>
                   <th>Products</th>
                   <th>Total</th>
-                  <th>Handover</th>
                   <th>Status</th>
                   <th>Created</th>
                 </tr>
@@ -274,7 +273,6 @@ export default function Customers() {
                         .join(", ") || "—"}
                     </td>
                     <td>₱{Number(order.totalCost).toFixed(2)}</td>
-                    <td>{order.handoverDate || "—"}</td>
                     <td>
                       <span className={`status-badge status-${order.status}`}>{order.status}</span>
                     </td>

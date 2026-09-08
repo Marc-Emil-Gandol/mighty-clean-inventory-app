@@ -10,6 +10,7 @@ const PRINTABLE_REPORT_TYPES = new Set([
   "damage_report",
   "inventory_report",
   "sales_report",
+  "goods_receipt",
 ]);
 
 export default function ActivityLog() {
@@ -29,6 +30,8 @@ export default function ActivityLog() {
       let data = null;
       if (log.reportType === "damage_report") {
         data = await api.getDamageReport(log.reportRefId);
+      } else if (log.reportType === "goods_receipt") {
+        data = await api.getGoodsReceipt(log.reportRefId);
       } else if (
         log.reportType === "sales_invoice" ||
         log.reportType === "sales_receipt" ||

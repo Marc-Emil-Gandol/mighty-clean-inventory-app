@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { Printer } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Printer, Eye } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
-import { DocHeader, SignatureLine } from "../components/PrintableReport";
+import { DocHeader, SignatureLine, PrintableReport } from "../components/PrintableReport";
 
 function toISODate(d) {
   return d.toISOString().slice(0, 10);
@@ -33,6 +33,9 @@ export default function Reports() {
   const [to, setTo] = useState("");
   const [error, setError] = useState("");
 
+  const [goodsReceipts, setGoodsReceipts] = useState([]);
+  const [goodsPreview, setGoodsPreview] = useState(null);
+
   async function loadInventoryReport() {
     setError("");
     try {
@@ -51,6 +54,20 @@ export default function Reports() {
     }
   }
 
+  async function loadGoodsReceipts() {
+    setError("");
+    try {
+      setGoodsReceipts(await api.getGoodsReceipts());
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "goods") loadGoodsReceipts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
   function generatePeriodReport(period) {
     const range = rangeFor(period);
     setFrom(range.from);
@@ -62,7 +79,7 @@ export default function Reports() {
     <div className="page">
       <div className="page-header">
         <h1>Reports</h1>
-        <p className="page-subtitle">Generate printable inventory and sales reports.</p>
+        <p className="page-subtitle">Generate printable inventory, sales, and goods receipt reports.</p>
       </div>
 
       <div className="tabs">
@@ -71,6 +88,9 @@ export default function Reports() {
         </button>
         <button className={tab === "sales" ? "tab active" : "tab"} onClick={() => setTab("sales")}>
           Sales report
+        </button>
+        <button className={tab === "goods" ? "tab active" : "tab"} onClick={() => setTab("goods")}>
+          Goods Receipts
         </button>
       </div>
 
@@ -204,6 +224,63 @@ export default function Reports() {
             </div>
           )}
         </div>
+      )}
+
+      {tab === "goods" && (
+        <div className="card table-card">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Receipt #</th>
+                <th>Products</th>
+                <th>Total Qty</th>
+                <th>Received By</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {goodsReceipts.map((r) => (
+                <tr key={r.id}>
+                  <td className="muted">#{r.id}</td>
+                  <td>
+                    {(r.products || [])
+                      .map((line) => `${line.name} × ${line.qty}`)
+                      .join(", ") || "—"}
+                  </td>
+                  <td>{r.totalQty}</td>
+                  <td>{r.staffName || "—"}</td>
+                  <td className="muted">{new Date(r.createdAt).toLocaleString()}</td>
+                  <td>
+                    <button
+                      className="icon-btn icon-btn-neutral"
+                      title="View / print receipt"
+                      onClick={() => setGoodsPreview(r)}
+                    >
+                      <Eye size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {goodsReceipts.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted" style={{ textAlign: "center" }}>
+                    No goods receipts yet. They're created automatically whenever stock is added.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {goodsPreview && (
+        <PrintableReport
+          type="goods_receipt"
+          data={goodsPreview}
+          generatedBy={user?.name}
+          onClose={() => setGoodsPreview(null)}
+        />
       )}
     </div>
   );

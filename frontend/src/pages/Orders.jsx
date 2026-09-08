@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, Check, X, Trash2, Undo2, FileText } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Plus, Check, X, Trash2, Undo2, FileText, ScanLine } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { PrintableReport } from "../components/PrintableReport";
@@ -10,6 +10,18 @@ function reportTypeForOrder(order) {
   if (order.status === "successful") return "sales_receipt";
   if (order.status === "returned") return "return_receipt";
   return "sales_invoice"; // pending or cancelled
+}
+
+function extractScannedCode(raw) {
+  let code = String(raw || "").trim();
+  if (!code) return "";
+  try {
+    const parsed = JSON.parse(code);
+    if (parsed && parsed.code) code = parsed.code;
+  } catch {
+    // plain barcode/text, use as-is
+  }
+  return code;
 }
 
 export default function Orders() {
@@ -28,6 +40,8 @@ export default function Orders() {
 
   const [customer, setCustomer] = useState("");
   const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
+  const [scanValue, setScanValue] = useState("");
+  const scanInputRef = useRef(null);
 
   async function load() {
     try {
@@ -46,6 +60,7 @@ export default function Orders() {
   function openNewOrder() {
     setCustomer("");
     setLines([{ ...EMPTY_LINE }]);
+    setScanValue("");
     setNewOrderOpen(true);
   }
 
@@ -61,6 +76,43 @@ export default function Orders() {
   function removeLine(index) {
     if (lines.length <= 1) return;
     setLines(lines.filter((_, i) => i !== index));
+  }
+
+  function applyScannedProduct(product) {
+    setLines((prev) => {
+      const idx = prev.findIndex((l) => String(l.productId) === String(product.id));
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], qty: String(Number(next[idx].qty || 0) + 1) };
+        return next;
+      }
+      const emptyIdx = prev.findIndex((l) => !l.productId);
+      if (emptyIdx >= 0) {
+        const next = [...prev];
+        next[emptyIdx] = { productId: product.id, qty: "1" };
+        return next;
+      }
+      return [...prev, { productId: product.id, qty: "1" }];
+    });
+  }
+
+  async function handleScan(rawValue) {
+    const code = extractScannedCode(rawValue);
+    setScanValue("");
+    if (!code) return;
+    setError("");
+    try {
+      const p = await api.lookupCode(code);
+      applyScannedProduct(p);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function handleScanKeyDown(e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    handleScan(e.target.value);
   }
 
   async function handleCreateOrder(e) {
@@ -299,6 +351,16 @@ export default function Orders() {
                   placeholder="e.g. Juan Dela Cruz"
                   value={customer}
                   onChange={(e) => setCustomer(e.target.value)}
+                />
+              </label>
+              <label>
+                Scan product (optional)
+                <input
+                  ref={scanInputRef}
+                  placeholder="Scan with T-1902L scanner, or type the code and press Enter"
+                  value={scanValue}
+                  onChange={(e) => setScanValue(e.target.value)}
+                  onKeyDown={handleScanKeyDown}
                 />
               </label>
               <div className="order-products-header">
